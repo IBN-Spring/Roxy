@@ -68,6 +68,19 @@ class TestReadFileTool:
         assert func["name"] == "file_read"
         assert "path" in func["parameters"].get("required", [])
 
+    @pytest.mark.asyncio
+    async def test_relative_path_resolves_to_workspace_not_cwd(self, tmp_path: Path):
+        """Relative paths resolve against ctx.workspace_root, not os.getcwd()."""
+        subdir = tmp_path / "sub"
+        subdir.mkdir()
+        (subdir / "nested.txt").write_text("nested content")
+        ctx = ToolContext(workspace_root=tmp_path)
+        tool = ReadFileTool()
+        # "sub/nested.txt" relative to workspace_root (tmp_path)
+        result = await tool.execute({"path": "sub/nested.txt"}, ctx)
+        assert result.success
+        assert "nested content" in result.content
+
 
 class TestWebFetchTool:
     def test_risk_level(self):

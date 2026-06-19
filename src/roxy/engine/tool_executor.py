@@ -150,6 +150,23 @@ class ToolExecutor:
                 denied_reason=perm_result.reason,
             )
 
+        # Approval gate — if the tool needs user confirmation, block until approval UI exists
+        if perm_result.requires_approval:
+            logger.warning(
+                f"Tool '{tool_name}' requires approval (risk={perm_result.risk_level.value}) "
+                f"but approval flow is not yet implemented."
+            )
+            return ToolCallResult(
+                tool_name=tool_name,
+                call_id=call_id,
+                result=ToolResult.fail(
+                    f"Approval required: this tool needs explicit user confirmation before running. "
+                    f"(risk level: {perm_result.risk_level.value})"
+                ),
+                approved=False,
+                denied_reason="approval_required",
+            )
+
         # Execute
         try:
             result = await tool.execute(params, self.ctx)

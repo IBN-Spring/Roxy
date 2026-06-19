@@ -31,7 +31,7 @@ class PermissionResult:
 
     allowed: True if the tool can execute.
     reason: Human-readable explanation.
-    risk_level: The tool's risk level.
+    risk_level: The tool's risk level (or elevated level from path check).
     requires_approval: True if this needs explicit user confirmation.
     """
 
@@ -60,16 +60,18 @@ class PermissionManager:
         if not result.allowed:
             raise PermissionError(result.reason)
         if result.requires_approval:
-            approved = await pm.request_approval(tool, params)
+            # In the future: approved = await pm.request_approval(tool, params)
+            # For now: ToolExecutor returns denied — approval UI hasn't been built yet.
+            pass
     """
 
-    # Commands/patterns always blocked in file paths
+    # Patterns always blocked in file paths (checked against resolved absolute path)
     BLOCKED_PATH_PATTERNS: list[str] = [
-        # System-critical paths
+        # Unix system-critical
         "/etc/passwd", "/etc/shadow", "/etc/sudoers",
         # Windows system
         "C:\\Windows\\System32", "C:\\Windows\\System",
-        # Generic dangerous patterns
+        # Kernel / device / proc pseudo-filesystems
         "/dev/", "/proc/", "/sys/",
     ]
 
@@ -91,7 +93,9 @@ class PermissionManager:
     ) -> PermissionResult:
         """Check whether a tool can execute with the given parameters.
 
-        Returns a PermissionResult — callers MUST respect it.
+        Returns a PermissionResult — callers MUST respect:
+        - allowed=False → execution blocked
+        - requires_approval=True → must prompt user before executing
         """
         # 1. Blocked-level tools are never allowed
         if tool.risk_level == RiskLevel.blocked:
@@ -100,38 +104,60 @@ class PermissionManager:
                 f"Tool '{tool.name}' is permanently blocked by policy.",
             )
 
-        # 2. Start with tool's declared risk; may be elevated by path checks
-        effective_risk = tool.risk_level
-
-        # 3. Workspace check for bounded tools
+        # 2. Workspace containment check for bounded tools
         if tool.workspace_bounded:
-            path = params.get("path") or params.get("file_path") or params.get("file")
-            if path:
-                path_result = self.check_file_access(Path(path), "r")
+            path_key = params.get("path") or params.get("file_path") or params.get("file")
+            if path_key:
+                ws_root = _resolve_workspace(ctx, self.workspace_root)
+                path_result = self.check_file_access(Path(path_key), "r", workspace_root=ws_root)
+
                 if not path_result.allowed:
                     return path_result
-                # Elevate risk if the path check found a higher level
-                if path_result.risk_level > effective_risk:
-                    effective_risk = path_result.risk_level
 
-        # 4. Determine if approval is required
-        requires_approval = self._needs_approval(effective_risk)
+                # workspace_bounded tools: outside workspace = DENY (not elevated to caution)
+                if path_result.risk_level >= RiskLevel.caution:
+                    return PermissionResult.deny(
+                        RiskLevel.blocked,
+                        f"Access to '{path_key}' is denied: "
+                        f"workspace-bounded tools can only access files within the workspace.",
+                    )
+
+        # 3. Determine if approval is required based on the tool's declared risk
+        requires_approval = self._needs_approval(tool.risk_level)
 
         return PermissionResult(
             allowed=True,
             reason="ok",
-            risk_level=effective_risk,
+            risk_level=tool.risk_level,
             requires_approval=requires_approval,
         )
 
-    def check_file_access(self, path: Path, mode: str = "r") -> PermissionResult:
+    def check_file_access(
+        self,
+        path: Path,
+        mode: str = "r",
+        workspace_root: Path | None = None,
+    ) -> PermissionResult:
         """Check whether a file path is safe to access.
 
+        Args:
+            path: The path to check (absolute or relative).
+            mode: Access mode — "r", "w", "a", "x". Write modes are more restrictive.
+            workspace_root: Base for resolving relative paths.
+                            Defaults to self.workspace_root.
+
         Rules:
-        1. Path must resolve within workspace_root (symlink-aware).
-        2. Path must not match any BLOCKED_PATH_PATTERNS.
-        3. Write mode on files outside workspace is denied.
+        1. Relative paths are resolved against workspace_root (NOT cwd).
+        2. Resolved path must not match any BLOCKED_PATH_PATTERNS.
+        3. Write access outside workspace is always denied.
+        4. Read access outside workspace returns caution-level (caller decides).
         """
+        base = workspace_root or self.workspace_root
+
+        # Resolve relative paths against workspace_root
+        if not path.is_absolute():
+            path = base / path
+
         try:
             resolved = path.resolve()
         except Exception:
@@ -151,15 +177,15 @@ class PermissionManager:
 
         # Check workspace containment
         try:
-            resolved.relative_to(self.workspace_root)
+            resolved.relative_to(base)
         except ValueError:
-            # Outside workspace — only allow read-only access
+            # Outside workspace
             if "w" in mode or "a" in mode or "x" in mode:
                 return PermissionResult.deny(
                     RiskLevel.dangerous,
                     f"Write access to '{path}' is denied (outside workspace).",
                 )
-            # Read-only outside workspace is caution-level
+            # Read-only outside workspace → caution (caller decides whether to deny)
             return PermissionResult(
                 allowed=True,
                 reason=f"Read-only access outside workspace: {path}",
@@ -167,6 +193,7 @@ class PermissionManager:
                 requires_approval=self._needs_approval(RiskLevel.caution),
             )
 
+        # Inside workspace → safe
         return PermissionResult.grant(RiskLevel.safe)
 
     # ── helpers ──────────────────────────────────────────────────
@@ -179,3 +206,12 @@ class PermissionManager:
             return True
         # dangerous_only: approve if risk >= caution
         return risk != RiskLevel.safe
+
+
+def _resolve_workspace(ctx: Any, fallback: Path) -> Path:
+    """Extract workspace_root from ctx, falling back to given default."""
+    if ctx is not None:
+        ws = getattr(ctx, "workspace_root", None)
+        if ws is not None:
+            return ws
+    return fallback
