@@ -4,6 +4,7 @@ from roxy.context.auto_compact import (
     AutoCompactor,
     _extract_block,
     _format_messages,
+    _safe_recent_start,
     MAX_CONSECUTIVE_FAILURES,
 )
 
@@ -48,6 +49,30 @@ class TestFormatMessages:
         }]
         result = _format_messages(msgs)
         assert "file_read" in result
+
+
+class TestSafeRecentStart:
+    def test_keeps_normal_recent_window(self):
+        msgs = [{"role": "user", "content": f"u{i}"} for i in range(10)]
+        assert _safe_recent_start(msgs, keep_recent=4) == 6
+
+    def test_moves_boundary_before_orphan_tool_result(self):
+        msgs = [
+            {"role": "user", "content": "old"},
+            {"role": "assistant", "content": "old"},
+            {"role": "user", "content": "please read"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": "call_1", "type": "function", "function": {"name": "file_read"}}
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": "result"},
+            {"role": "assistant", "content": "done"},
+        ]
+
+        assert _safe_recent_start(msgs, keep_recent=2) == 3
 
 
 class TestAutoCompactor:

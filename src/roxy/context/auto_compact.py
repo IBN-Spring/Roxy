@@ -106,9 +106,13 @@ class AutoCompactor:
             # Too few messages to compact
             return messages
 
-        # Split: old messages to summarise, recent messages to keep
-        old_messages = messages[:-keep_recent]
-        recent_messages = messages[-keep_recent:]
+        # Split: old messages to summarise, recent messages to keep.
+        # The boundary must not orphan OpenAI tool-result messages: every
+        # role=tool message kept in recent context needs its preceding assistant
+        # message with tool_calls kept as well.
+        recent_start = _safe_recent_start(messages, keep_recent)
+        old_messages = messages[:recent_start]
+        recent_messages = messages[recent_start:]
 
         # Build the prompt with the old messages
         transcript = _format_messages(old_messages)
@@ -186,3 +190,23 @@ def _extract_block(text: str, tag: str) -> str:
     pattern = rf"<{tag}>\s*(.*?)\s*</{tag}>"
     match = re.search(pattern, text, re.DOTALL)
     return match.group(1).strip() if match else ""
+
+
+def _safe_recent_start(messages: list[dict[str, Any]], keep_recent: int) -> int:
+    """Return a recent-window start index that preserves tool-call adjacency.
+
+    OpenAI-compatible tool messages are ordered:
+      assistant(tool_calls=[...]) -> tool(tool_call_id=...) [one per call]
+
+    If compaction keeps a trailing tool message but summarizes away its
+    assistant tool-call parent, the next model call can fail. Move the recent
+    boundary backward until it starts before any contiguous trailing tool block.
+    """
+    if len(messages) <= keep_recent:
+        return 0
+
+    start = len(messages) - keep_recent
+    while start > 0 and messages[start].get("role") == "tool":
+        start -= 1
+
+    return start
