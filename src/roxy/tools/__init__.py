@@ -3,7 +3,7 @@
 from roxy.tools.base import BaseTool, RiskLevel, ToolContext, ToolResult
 from roxy.tools.registry import ToolRegistry
 from roxy.tools.permissions import PermissionManager, ApprovalMode
-from roxy.tools.builtin import ReadFileTool, WebFetchTool
+from roxy.tools.builtin import ReadFileTool, WebFetchTool, KnowledgeQueryTool
 
 __all__ = [
     "BaseTool",
@@ -15,4 +15,5 @@ __all__ = [
     "ApprovalMode",
     "ReadFileTool",
     "WebFetchTool",
+    "KnowledgeQueryTool",
 ]

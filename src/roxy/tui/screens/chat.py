@@ -103,8 +103,9 @@ class ChatScreen(Screen):
         thinking = self.query_one("#thinking-indicator", Static)
         thinking.update("Thinking...")
 
-        # Accumulator for streaming content
+        # Accumulator for streaming content and tool call tracking
         full_content = ""
+        tool_calls_log: list[dict] = []  # Collect tool call+result pairs for display
 
         try:
             async for output in self._engine.submit_message(user_input, self.model_override):
@@ -115,12 +116,21 @@ class ChatScreen(Screen):
                 elif output.type == "tool_call":
                     calls = output.meta.get("calls", [])
                     thinking.update(f"🔧 Calling: {', '.join(calls)}")
+                    # Start a new batch entry
+                    tool_calls_log.append({"calls": calls, "results": []})
 
                 elif output.type == "tool_result":
                     tool = output.meta.get("tool", "")
                     ok = output.meta.get("success", False)
                     icon = "✓" if ok else "✗"
                     thinking.update(f"  {icon} {tool}")
+                    # Add result to the current batch
+                    if tool_calls_log:
+                        tool_calls_log[-1]["results"].append({
+                            "tool": tool,
+                            "success": ok,
+                            "preview": output.content[:200].replace("\n", " "),
+                        })
 
                 elif output.type == "done":
                     thinking.update("")
@@ -139,8 +149,28 @@ class ChatScreen(Screen):
         finally:
             thinking.update("")
             self._finalize_assistant_message(full_content)
+
+            # Summarize tool calls as a visible status message in the chat
+            if tool_calls_log:
+                summary = self._format_tool_summary(tool_calls_log)
+                self._add_message("status", summary)
+
             self._update_status()
             self._session = self._engine.session if self._engine else None
+
+    # ── tool call display ─────────────────────────────────────────
+
+    def _format_tool_summary(self, log: list[dict]) -> str:
+        """Format tool call batches into a human-readable summary."""
+        lines = []
+        for batch in log:
+            calls = batch.get("calls", [])
+            results = batch.get("results", [])
+            lines.append(f"🔧 Called: {', '.join(calls)}")
+            for r in results:
+                icon = "✓" if r["success"] else "✗"
+                lines.append(f"  {icon} {r['tool']}: {r['preview'][:120]}")
+        return "\n".join(lines)
 
     # ── message rendering helpers ────────────────────────────────
 

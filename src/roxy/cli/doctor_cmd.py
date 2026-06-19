@@ -85,11 +85,12 @@ def _doctor_rich(cfg: Config, verbose: bool) -> None:
     console.print("[bold]Available Tools:[/bold]")
     try:
         from roxy.tools.registry import ToolRegistry
-        from roxy.tools.builtin import ReadFileTool, WebFetchTool
+        from roxy.tools.builtin import ReadFileTool, WebFetchTool, KnowledgeQueryTool
 
         registry = ToolRegistry()
         registry.register(ReadFileTool())
         registry.register(WebFetchTool())
+        registry.register(KnowledgeQueryTool())
 
         for t in registry.get_all():
             risk_style = {"safe": "green", "caution": "yellow", "dangerous": "red"}.get(t.risk_level.value, "dim")
@@ -128,10 +129,11 @@ def _doctor_json(cfg: Config, verbose: bool) -> None:
     tools_info: list[dict] = []
     try:
         from roxy.tools.registry import ToolRegistry
-        from roxy.tools.builtin import ReadFileTool, WebFetchTool
+        from roxy.tools.builtin import ReadFileTool, WebFetchTool, KnowledgeQueryTool
         registry = ToolRegistry()
         registry.register(ReadFileTool())
         registry.register(WebFetchTool())
+        registry.register(KnowledgeQueryTool())
         tools_info = registry.tool_summary()
     except Exception:
         pass

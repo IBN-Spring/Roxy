@@ -13,7 +13,7 @@ from roxy.engine.session import Session, SessionManager
 from roxy.engine.tool_executor import ToolExecutor
 from roxy.models.provider import ModelProvider, ProviderError
 from roxy.tools.base import RiskLevel, ToolContext
-from roxy.tools.builtin import ReadFileTool, WebFetchTool
+from roxy.tools.builtin import ReadFileTool, WebFetchTool, KnowledgeQueryTool
 from roxy.tools.permissions import PermissionManager
 from roxy.tools.registry import ToolRegistry
 
@@ -236,6 +236,7 @@ class QueryEngine:
         """Register the built-in tools."""
         self.tool_registry.register(ReadFileTool())
         self.tool_registry.register(WebFetchTool())
+        self.tool_registry.register(KnowledgeQueryTool())
 
     # ── session helpers ──────────────────────────────────────────
 
