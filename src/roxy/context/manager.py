@@ -1,14 +1,14 @@
-"""ContextManager v0 — assemble system prompt + user context. No compression yet."""
+"""ContextManager — assemble system prompt + user context + compaction support."""
 
 from roxy.config.loader import Config
 from roxy.memory.profile import UserProfile
 
 
 class ContextManager:
-    """Assembles the system prompt and context for each turn.
+    """Assembles the system prompt, user context, and handles compaction.
 
-    Phase 1: minimal — just user profile. No tools context, no project memory,
-    no compression. Those come in later phases.
+    Phase 5: supports micro-compact (per-turn tool result trimming) and
+    auto-compact (LLM summarisation when context exceeds threshold).
     """
 
     SYSTEM_PROMPT = """\
@@ -18,9 +18,8 @@ You help researchers gather, organise, and understand information in their field
 Be concise, accurate, and helpful. When you don't know something, say so. When
 you can help the user find information, do so.
 
-You are currently in a chat conversation. In future versions you will have access
-to tools (web search, file reading, RSS feeds, knowledge base), but for now you
-are a conversational assistant.
+You have access to tools — use them when they help answer the user's question.
+When tool results are large, focus on the most relevant parts in your response.
 """
 
     def __init__(self, config: Config):
@@ -28,10 +27,7 @@ are a conversational assistant.
         self.profile = UserProfile(config)
 
     def build_system_prompt(self) -> str:
-        """Assemble the full system prompt for the current session.
-
-        Returns the base system prompt + user profile block (if set).
-        """
+        """Assemble the full system prompt for the current session."""
         parts = [self.SYSTEM_PROMPT.strip()]
 
         profile_text = self.profile.to_system_context()
@@ -40,3 +36,14 @@ are a conversational assistant.
             parts.append(profile_text)
 
         return "\n".join(parts)
+
+    def should_compact(self, messages: list[dict], threshold: int = 40_000) -> bool:
+        """Return True if the message list should be compacted."""
+        from roxy.context.token_counter import estimate_tokens
+
+        estimated = estimate_tokens(messages)
+        # Add system prompt tokens
+        system_tokens = estimate_tokens(
+            [{"role": "system", "content": self.build_system_prompt()}]
+        )
+        return (estimated + system_tokens) > threshold

@@ -1,4 +1,4 @@
-"""QueryEngine — session owner, main agent loop (v1: tools, no compression)."""
+"""QueryEngine — session owner, main agent loop (v2: tools + compaction)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,9 @@ from typing import Any, AsyncGenerator
 
 from roxy.config.loader import Config
 from roxy.context.manager import ContextManager
+from roxy.context.auto_compact import AutoCompactor, AUTOCOMPACT_TOKEN_THRESHOLD
+from roxy.context.micro_compact import trim_single_result
+from roxy.context.token_counter import estimate_tokens
 from roxy.engine.session import Session, SessionManager
 from roxy.engine.tool_executor import ToolExecutor
 from roxy.models.provider import ModelProvider, ProviderError
@@ -77,6 +80,9 @@ class QueryEngine:
         )
         self.tool_executor = ToolExecutor(self.tool_registry, self.permissions, self.tool_ctx)
 
+        # Compaction system
+        self.compactor = AutoCompactor(self.provider)
+
         # Load existing messages from session (resume)
         self._messages: list[dict[str, Any]] = list(self.session.messages)
 
@@ -101,6 +107,13 @@ class QueryEngine:
             iteration = 0
             while iteration < self.MAX_TOOL_ITERATIONS:
                 iteration += 1
+
+                # Check auto-compact threshold before each model call
+                if self.context_manager.should_compact(self._messages, AUTOCOMPACT_TOKEN_THRESHOLD):
+                    compacted = await self.compactor.compact(self._messages)
+                    if compacted is not None:
+                        self._messages = compacted
+                        yield TurnOutput("status", "Context compacted (auto)", {"compact": True})
 
                 response = await self._call_with_tools(
                     model=resolved_model,
@@ -135,12 +148,13 @@ class QueryEngine:
                         ],
                     })
 
-                    # Add tool results
+                    # Add tool results (micro-compacted)
                     for tcr in batch.results:
+                        trimmed = trim_single_result(tcr.result.content)
                         self._messages.append({
                             "role": "tool",
                             "tool_call_id": tcr.call_id,
-                            "content": tcr.result.content,
+                            "content": trimmed,
                         })
                         yield TurnOutput(
                             "tool_result",
