@@ -63,3 +63,10 @@ try:
     main.add_command(research_cmd)
 except ImportError:
     pass
+
+# Phase 6: monitor
+try:
+    from roxy.cli.monitor_cmd import monitor_cmd
+    main.add_command(monitor_cmd)
+except ImportError:
+    pass
