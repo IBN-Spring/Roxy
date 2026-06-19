@@ -1,11 +1,13 @@
 """Standard paths for Roxy configuration and data."""
 
+import os
 from pathlib import Path
 
 
 def roxy_home() -> Path:
     """Return the Roxy home directory (~/.roxy), creating it if needed."""
-    path = Path.home() / ".roxy"
+    override = os.environ.get("ROXY_HOME")
+    path = Path(override).expanduser() if override else Path.home() / ".roxy"
     path.mkdir(parents=True, exist_ok=True)
     return path
 

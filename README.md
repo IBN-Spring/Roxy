@@ -13,6 +13,12 @@ pip install -e ".[tui]"
 # First-time setup
 roxy init
 
+# Non-interactive bootstrap, useful for scripts/servers
+roxy init --yes --name "Your Name" --domain "bioinformatics" \
+  --topic "single-cell" \
+  --feed "Hacker News=https://hnrss.org/frontpage" \
+  --skip-provider
+
 # Check everything works
 roxy doctor
 

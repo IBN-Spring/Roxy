@@ -65,7 +65,6 @@ $ROXY research digest --json > /dev/null 2>&1 && pass "digest --json" || fail "d
 
 # 10. Monitor
 echo "[10] Monitor"
-$ROXY monitor run --no-feeds-ok 2>/dev/null || true
 $ROXY monitor run --json > /dev/null 2>&1 || true
 pass "monitor run (no crash)"
 
