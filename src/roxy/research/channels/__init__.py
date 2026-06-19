@@ -1,9 +1,16 @@
-"""Research channels — RSS, web, search, etc."""
+"""Research channels — RSS, WeChat, web, search, etc."""
 
 from roxy.research.channels.base import Channel, ResearchItem
 from roxy.research.channels.rss import RSSChannel
 
 ALL_CHANNELS: list[Channel] = [RSSChannel()]
+
+# Optional channels — fail gracefully if not importable
+try:
+    from roxy.research.channels.wechat import WechatChannel
+    ALL_CHANNELS.append(WechatChannel())
+except ImportError:
+    pass
 
 
 def get_channel(name: str) -> Channel | None:
@@ -14,4 +21,8 @@ def get_channel(name: str) -> Channel | None:
     return None
 
 
-__all__ = ["Channel", "ResearchItem", "RSSChannel", "ALL_CHANNELS", "get_channel"]
+__all__ = [
+    "Channel", "ResearchItem",
+    "RSSChannel", "WechatChannel",
+    "ALL_CHANNELS", "get_channel",
+]
