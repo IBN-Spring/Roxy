@@ -44,11 +44,22 @@ main.add_command(init_cmd)
 main.add_command(doctor_cmd)
 main.add_command(config_cmd)
 
-
-# chat_cmd is added during Phase 1 — placeholder for now
-# Import error is caught so Phase 0 can run without the chat module
+# Phase 1: chat
 try:
     from roxy.cli.chat_cmd import chat_cmd
     main.add_command(chat_cmd)
+except ImportError:
+    pass
+
+# Phase 3: knowledge + research
+try:
+    from roxy.cli.knowledge_cmd import knowledge_cmd
+    main.add_command(knowledge_cmd)
+except ImportError:
+    pass
+
+try:
+    from roxy.cli.research_cmd import research_cmd
+    main.add_command(research_cmd)
 except ImportError:
     pass
