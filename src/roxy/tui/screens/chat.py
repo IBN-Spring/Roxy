@@ -16,6 +16,7 @@ from roxy.engine.session import Session, SessionManager
 from roxy.tui.widgets.input_area import InputArea
 from roxy.tui.widgets.message import MessageWidget
 from roxy.tui.widgets.status_bar import StatusBar
+from roxy.tui.widgets.mascot import MascotWidget
 from roxy.tui.widgets.welcome import WelcomePanel
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,7 @@ class ChatScreen(Screen):
         with Container(id="chat-shell"):
             yield Static("", id="welcome-slot")
             yield VerticalScroll(id="message-list")
+            yield MascotWidget(id="mascot")
             yield Static("", id="thinking-indicator")
             yield InputArea()
         yield StatusBar()
@@ -799,6 +801,9 @@ class ChatScreen(Screen):
         if not self._engine:
             return
 
+        mascot = self.query_one("#mascot", MascotWidget)
+        mascot.set_state("thinking")
+
         thinking = self.query_one("#thinking-indicator", Static)
         thinking.update("Thinking...")
 
@@ -808,10 +813,12 @@ class ChatScreen(Screen):
         try:
             async for output in self._engine.submit_message(user_input, self.model_override):
                 if output.type == "chunk":
+                    mascot.set_state("typing")
                     full_content += output.content
                     self._upsert_assistant_message(full_content)
 
                 elif output.type == "tool_call":
+                    mascot.set_state("magic")
                     calls = output.meta.get("calls", [])
                     thinking.update(f"🔧 Calling: {', '.join(calls)}")
                     tool_calls_log.append({"calls": calls, "results": []})
@@ -829,9 +836,11 @@ class ChatScreen(Screen):
                         })
 
                 elif output.type == "done":
+                    mascot.set_state("idle")
                     thinking.update("")
 
                 elif output.type == "error":
+                    mascot.set_state("idle")
                     thinking.update("")
                     self._add_message("error", output.content)
 
