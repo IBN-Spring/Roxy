@@ -38,7 +38,7 @@ def _KNOWN_ENV_FOR(provider: str) -> str:
 # ── slash commands ──────────────────────────────────────────────
 
 HELP_TEXT = """\
-[b]Slash Commands[/b]
+[b]Chat Commands[/b]
 
   /help              Show this message
   /key               Show API key status + configure
@@ -50,11 +50,15 @@ HELP_TEXT = """\
   /resume [id]       Resume a previous session
   /exit              Exit Roxy
 
-[b]Tips[/b]
-  • Ask Roxy to search your knowledge base or read files
-  • Add feeds with: roxy research feeds add "Name" "URL"
-  • Collect updates: roxy research collect --all
-  • Digest: roxy research digest --days 7
+[b]Research Commands[/b]
+
+  /feeds             Show feed source status
+  /collect           Collect from all enabled feeds
+  /runs              Show recent collection runs
+  /digest            Generate 7-day digest summary
+  /digest 30         30-day digest
+  /digest latest     Digest for latest collection run
+  /kb [query]        Search the knowledge base
 """
 
 
@@ -173,6 +177,11 @@ class ChatScreen(Screen):
             "/sessions": self._cmd_sessions,
             "/resume": lambda a: self._cmd_resume(a),
             "/exit": self._cmd_exit,
+            "/feeds": self._cmd_feeds,
+            "/collect": self._cmd_collect,
+            "/runs": self._cmd_runs,
+            "/digest": lambda a: self._cmd_digest(a),
+            "/kb": lambda a: self._cmd_kb(a),
         }
 
         handler = handlers.get(cmd)
@@ -357,6 +366,151 @@ class ChatScreen(Screen):
         """Schedule app exit."""
         self.app.exit()
         return ""
+
+    # ── research commands ───────────────────────────────────────
+
+    def _cmd_feeds(self, _arg: str) -> str:
+        """Show feed source status."""
+        try:
+            from roxy.research.source_manager import SourceManager
+            sm = SourceManager(self.config)
+            summary = sm.get_status_summary()
+            if summary["total"] == 0:
+                return "[dim]No feeds configured. Add: roxy research feeds add \"Name\" \"URL\"[/dim]"
+
+            lines = [f"[b]Feed Sources[/b] ({summary['enabled']} enabled, {summary['disabled']} disabled)", ""]
+            for f in summary["feeds"]:
+                icon = "[green]✓[/green]" if f["enabled"] else "[dim]○[/dim]"
+                err = f" [red]⚠ {f['last_error'][:50]}[/red]" if f.get("last_error") else ""
+                last = f["last_run_at"][:16] if f.get("last_run_at") else "never"
+                lines.append(f"  {icon} [cyan]{f['name']}[/cyan] — last: {last}, collected: {f['total_collected']}{err}")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"[red]Error loading feeds: {exc}[/red]"
+
+    def _cmd_collect(self, _arg: str) -> str:
+        """Collect from all enabled feeds."""
+        import asyncio as _asyncio
+        try:
+            from roxy.research.source_manager import SourceManager
+            from roxy.research.collector import ContentCollector
+            sm = SourceManager(self.config)
+            feeds = sm.list_feeds(enabled_only=True)
+            if not feeds:
+                return "[yellow]No enabled feeds. Add: roxy research feeds add \"Name\" \"URL\"[/yellow]"
+
+            collector = ContentCollector(self.config)
+            result = _asyncio.run(collector.collect_feeds(feeds))
+
+            lines = [f"[b]Collection Complete[/b]", ""]
+            lines.append(f"  Run: [cyan]{result['run_id'][:8]}[/cyan]")
+            lines.append(f"  Feeds: {result['feeds_processed']}")
+            lines.append(f"  New: [green]{result['total_new']}[/green]")
+            lines.append(f"  Duplicates: {result['total_dup']}")
+            if result.get("errors"):
+                lines.append(f"  Errors: [red]{len(result['errors'])}[/red]")
+            for r in result["results"]:
+                icon = "✓" if "error" not in r else "✗"
+                lines.append(f"  {icon} [cyan]{r['feed']}[/cyan]: {r['items_new']} new")
+            lines.append("")
+            lines.append("View: /runs  |  /digest latest")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"[red]Collection failed: {exc}[/red]"
+
+    def _cmd_runs(self, _arg: str) -> str:
+        """Show recent collection runs."""
+        try:
+            from roxy.research.run_history import RunHistory
+            rh = RunHistory()
+            runs = rh.list_runs(limit=8)
+            if not runs:
+                return "[dim]No collection runs yet. Run /collect first.[/dim]"
+
+            lines = ["[b]Recent Collection Runs[/b]", ""]
+            for r in runs:
+                started = r["started_at"][:16] if r["started_at"] else "—"
+                err = f" [red]{r['error_count']} err[/red]" if r["error_count"] else ""
+                lines.append(f"  [cyan]{r['run_id'][:8]}[/cyan] {started} — "
+                             f"{r['feed_count']} feeds, [green]{r['total_new']} new[/green]{err}")
+            lines.append("")
+            lines.append("Details: /digest latest  |  /digest <run_id>")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"[red]Error loading runs: {exc}[/red]"
+
+    def _cmd_digest(self, arg: str) -> str:
+        """Generate a digest summary inline."""
+        try:
+            from roxy.research.digest import ResearchDigest
+            from roxy.research.run_history import RunHistory
+
+            dg = ResearchDigest()
+            run_id = None
+            days = 7
+
+            arg = arg.strip()
+            if arg.lower() == "latest":
+                rh = RunHistory()
+                latest = rh.latest_run()
+                if latest:
+                    run_id = latest["run_id"]
+                else:
+                    return "[yellow]No collection runs found. Using 7-day window instead.[/yellow]"
+            elif arg.isdigit():
+                days = min(int(arg), 365)
+            elif len(arg) >= 6:
+                run_id = arg
+
+            result = dg.generate(days=days, run_id=run_id, group_by="source")
+
+            if result["entry_count"] == 0:
+                return f"[dim]No entries found for {result['period']}.[/dim] Run /collect first."
+
+            # Build compact summary for TUI
+            lines = [f"[b]Research Digest[/b] — {result['period']}", ""]
+            lines.append(f"  Entries: {result['entry_count']}  |  Sources: {len(result['groups'])}")
+
+            for name, group in sorted(result["groups"].items()):
+                count = group["count"]
+                lines.append(f"  [cyan]{name}[/cyan] ({count})")
+                for entry in group["entries"][:3]:
+                    title = entry.get("title", "(untitled)")
+                    lines.append(f"    - {title}")
+
+            lines.append("")
+            lines.append("Full report: roxy research digest --out digest.md")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"[red]Digest failed: {exc}[/red]"
+
+    def _cmd_kb(self, arg: str) -> str:
+        """Search the knowledge base."""
+        query = arg.strip()
+        if not query:
+            return "[yellow]Usage: /kb <query>[/yellow]"
+
+        try:
+            from roxy.knowledge.store import KnowledgeStore
+            from roxy.knowledge.query import KnowledgeQuery
+            store = KnowledgeStore()
+            store.init_db()
+            q = KnowledgeQuery(store)
+            results = q.search(query, limit=8)
+
+            if not results:
+                return f"[dim]No results for '{query}'.[/dim]"
+
+            lines = [f"[b]KB Search: '{query}'[/b] ({len(results)} results)", ""]
+            for i, e in enumerate(results, 1):
+                date = e.published_at[:10] if e.published_at else "—"
+                src = e.collected_via or "—"
+                lines.append(f"  {i}. [cyan]{e.title}[/cyan] ({date}, {src})")
+                if e.canonical_url:
+                    lines.append(f"     [dim]{e.canonical_url}[/dim]")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"[red]KB search failed: {exc}[/red]"
 
     # ── streaming ────────────────────────────────────────────────
 

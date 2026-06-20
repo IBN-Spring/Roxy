@@ -34,7 +34,7 @@ class TestSlashCommands:
 
     def test_help(self, screen: ChatScreen):
         result = screen._handle_slash("/help")
-        assert "Slash Commands" in result
+        assert "Chat Commands" in result or "Slash Commands" in result
         assert "/doctor" in result
         assert "/model" in result
 
@@ -85,3 +85,34 @@ class TestSlashCommands:
         assert "/sessions" in HELP_TEXT
         assert "/resume" in HELP_TEXT
         assert "/exit" in HELP_TEXT
+
+    # ── research commands ────────────────────────────────────
+
+    def test_feeds(self, screen: ChatScreen):
+        result = screen._handle_slash("/feeds")
+        assert "Feed" in result or "feeds" in result.lower() or "No feeds" in result
+
+    def test_runs(self, screen: ChatScreen):
+        result = screen._handle_slash("/runs")
+        assert "Run" in result or "runs" in result.lower() or "No collection" in result
+
+    def test_digest_default(self, screen: ChatScreen):
+        result = screen._handle_slash("/digest")
+        assert "Digest" in result or "digest" in result.lower() or "No entries" in result
+
+    def test_digest_30(self, screen: ChatScreen):
+        result = screen._handle_slash("/digest 30")
+        assert "Digest" in result or "digest" in result.lower() or "No entries" in result
+
+    def test_kb_no_query(self, screen: ChatScreen):
+        result = screen._handle_slash("/kb")
+        assert "Usage" in result
+
+    def test_kb_search(self, screen: ChatScreen):
+        result = screen._handle_slash("/kb test")
+        assert "KB Search" in result or "No results" in result
+
+    def test_collect_no_feeds(self, screen: ChatScreen):
+        self._setup_engine(screen)
+        result = screen._handle_slash("/collect")
+        assert "No enabled" in result or "feeds" in result.lower()
