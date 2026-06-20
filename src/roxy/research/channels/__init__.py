@@ -9,6 +9,8 @@ ALL_CHANNELS: list[Channel] = [RSSChannel()]
 _CHANNEL_CLASSES = [
     ("roxy.research.channels.wechat", "WechatChannel"),
     ("roxy.research.channels.agent_reach_web", "AgentReachWebChannel"),
+    ("roxy.research.channels.arxiv", "ArXivChannel"),
+    ("roxy.research.channels.pubmed", "PubMedChannel"),
 ]
 
 for module_path, class_name in _CHANNEL_CLASSES:
