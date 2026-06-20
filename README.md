@@ -19,10 +19,6 @@
   <b>中文</b> | <a href="README_en.md">English</a>
 </p>
 
-<p align="center">
-  <img src="assets/mascot/roxy-readme-mascot.png" alt="Roxy mascot" width="180">
-</p>
-
 ---
 
 Roxy 是一个终端里的研究助手：监控信息源、构建知识库、回答问题。
