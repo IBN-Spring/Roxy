@@ -23,7 +23,7 @@ MASCOT = r"""
 
 
 class WelcomePanel(Widget):
-    """A compact Claude-Code-like getting-started panel."""
+    """A compact getting-started panel with model/key status."""
 
     DEFAULT_CSS = """
     WelcomePanel {
@@ -38,12 +38,16 @@ class WelcomePanel(Widget):
         model: str,
         session_id: str,
         workspace: Path,
+        has_api_key: bool = False,
+        key_source: str = "",
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.model = model
         self.session_id = session_id
         self.workspace = workspace
+        self.has_api_key = has_api_key
+        self.key_source = key_source
 
     def render(self) -> Panel:
         grid = Table.grid(expand=True)
@@ -69,22 +73,49 @@ class WelcomePanel(Widget):
         tips.append(".\n")
         tips.append("• Collect updates with ")
         tips.append("roxy research collect --all", style="cyan")
-        tips.append(" and summarize with ")
-        tips.append("roxy research digest", style="cyan")
         tips.append(".\n")
+        tips.append("• Type ")
+        tips.append("/help", style="cyan")
+        tips.append(" to see all slash commands.\n")
         tips.append("• Available tools: file_read, web_fetch, knowledge_query.", style="dim")
 
         right = Table.grid()
         right.add_row(title)
+
+        # No API key warning
+        if not self.has_api_key:
+            warning = Text()
+            warning.append("\n⚠  No API key configured\n\n", style="bold yellow")
+            provider = self.model.split("/")[0] if "/" in self.model else "openai"
+            warning.append(f"Configure your {provider} key to start chatting:\n", style="dim")
+            warning.append(
+                f"  roxy config set models.providers.{provider}.api_key \"<your-key>\"\n",
+                style="cyan",
+            )
+            warning.append(
+                f"  or: export {provider.upper()}_API_KEY=\"<your-key>\"\n",
+                style="cyan",
+            )
+            warning.append("\nThen restart with ", style="dim")
+            warning.append("roxy chat", style="cyan")
+            warning.append(".", style="dim")
+            right.add_row(warning)
+        elif self.key_source == "env":
+            info.add_row("key source", "environment variable")
+
         right.add_row(info)
         right.add_row(tips)
 
         grid.add_row(Text(MASCOT, style="cyan"), right)
 
+        subtitle = "enter a message below"
+        if not self.has_api_key:
+            subtitle = "⚠ no API key — type /help for setup"
+
         return Panel(
             grid,
             title="Roxy Agent",
-            subtitle="enter a message below",
-            border_style="cyan",
+            subtitle=subtitle,
+            border_style="yellow" if not self.has_api_key else "cyan",
             padding=(1, 2),
         )

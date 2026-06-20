@@ -160,10 +160,53 @@ def _doctor_rich(cfg: Config, verbose: bool) -> None:
     if ok_count == 0 and warn_count == 0:
         console.print("[yellow]No providers configured. Run [cyan]roxy init[/cyan] to set up.[/yellow]")
     elif ok_count > 0:
-        console.print("[green]Ready to chat! Run [cyan]roxy chat[/cyan] (Phase 1).[/green]")
+        console.print("[green]Ready to chat! Run [cyan]roxy chat[/cyan].[/green]")
     else:
-        console.print("[yellow]Providers configured but keys may be missing.[/yellow]")
-        console.print("Set a key: [cyan]roxy config set models.providers.<name>.api_key <key>[/cyan]")
+        console.print("[yellow]Providers configured but API keys may be missing.[/yellow]")
+        console.print()
+        _print_key_fix_hints(results, default_model)
+        console.print()
+
+    # Env var detection
+    _print_env_key_hints()
+
+
+def _print_key_fix_hints(results: dict, default_model: str) -> None:
+    """Print per-provider key configuration commands."""
+    console.print("[bold]Fix with one of these:[/bold]")
+    for name in sorted(results.keys()):
+        provider = name
+        env_var = _KNOWN_ENV(provider)
+        console.print(f"  [cyan]roxy config set models.providers.{provider}.api_key \"<your-key>\"[/cyan]")
+        if env_var:
+            console.print(f"  or: [cyan]export {env_var}=\"<your-key>\"[/cyan]")
+
+
+def _print_env_key_hints() -> None:
+    """Detect if any well-known env vars are already set."""
+    import os
+    found: list[str] = []
+    for provider, env_var in _ENV_MAP.items():
+        if os.environ.get(env_var):
+            found.append(f"{env_var} (for {provider})")
+    if found:
+        console.print("[dim]Detected env vars: " + ", ".join(found) + "[/dim]")
+        console.print("[dim]Use /model <provider>/<model> to switch, or set models.default in config.[/dim]")
+
+
+_ENV_MAP = {
+    "openai": "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "together": "TOGETHER_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "cohere": "COHERE_API_KEY",
+}
+
+
+def _KNOWN_ENV(provider: str) -> str:
+    return _ENV_MAP.get(provider.lower(), "")
 
 
 def _doctor_json(cfg: Config, verbose: bool) -> None:

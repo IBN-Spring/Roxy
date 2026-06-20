@@ -20,12 +20,28 @@ from roxy.tui.widgets.welcome import WelcomePanel
 
 logger = logging.getLogger(__name__)
 
+# well-known env var mapping (duplicated from provider.py to avoid circular import)
+_ENV_MAP = {
+    "openai": "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "together": "TOGETHER_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "cohere": "COHERE_API_KEY",
+}
+
+
+def _KNOWN_ENV_FOR(provider: str) -> str:
+    return _ENV_MAP.get(provider.lower(), "")
+
 # ── slash commands ──────────────────────────────────────────────
 
 HELP_TEXT = """\
 [b]Slash Commands[/b]
 
   /help              Show this message
+  /key               Show API key status + configure
   /clear             Clear the screen (session kept)
   /doctor            Show provider, tools, channels, KB status
   /model             Show current model
@@ -150,6 +166,7 @@ class ChatScreen(Screen):
 
         handlers = {
             "/help": self._cmd_help,
+            "/key": self._cmd_key,
             "/clear": self._cmd_clear,
             "/doctor": self._cmd_doctor,
             "/model": lambda a: self._cmd_model(a),
@@ -167,6 +184,39 @@ class ChatScreen(Screen):
 
     def _cmd_help(self, _arg: str) -> str:
         return HELP_TEXT
+
+    def _cmd_key(self, _arg: str) -> str:
+        """Show API key status and configuration instructions."""
+        if not self._engine:
+            return "[yellow]Engine not initialized.[/yellow]"
+
+        model = self._engine.provider.resolve_model(self.model_override)
+        provider = model.split("/")[0] if "/" in model else model
+        has_key = self._engine.provider.has_api_key(model)
+        key_src = self._engine.provider.get_key_source(model)
+
+        lines = ["[b]API Key Status[/b]", ""]
+
+        if has_key:
+            src_label = "environment variable" if key_src == "env" else "config file"
+            lines.append(f"  [green]✓[/green] API key configured for [cyan]{provider}[/cyan]")
+            lines.append(f"  Source: {src_label}")
+            lines.append(f"  Model:  [cyan]{model}[/cyan]")
+        else:
+            lines.append(f"  [yellow]⚠[/yellow] No API key for [cyan]{provider}[/cyan]")
+            lines.append("")
+            lines.append("[b]To configure:[/b]")
+            lines.append(f"  [cyan]roxy config set models.providers.{provider}.api_key \"<your-key>\"[/cyan]")
+            env_var = _KNOWN_ENV_FOR(provider)
+            if env_var:
+                lines.append(f"  or: [cyan]export {env_var}=\"<your-key>\"[/cyan]")
+
+            lines.append("")
+            lines.append("[b]Other providers:[/b]")
+            lines.append("  [cyan]roxy config set models.providers.<name>.api_key \"<key>\"[/cyan]")
+            lines.append("  [cyan]roxy config set models.default \"<provider>/<model>\"[/cyan]")
+
+        return "\n".join(lines)
 
     def _cmd_clear(self, _arg: str) -> str:
         """Clear all messages from the display (session intact)."""
@@ -387,12 +437,17 @@ class ChatScreen(Screen):
     def _mount_welcome(self) -> None:
         if not self._engine:
             return
+        model = self._engine.provider.resolve_model(self.model_override)
+        has_key = self._engine.provider.has_api_key(model)
+        key_src = self._engine.provider.get_key_source(model)
         slot = self.query_one("#welcome-slot", Static)
         slot.update(
             WelcomePanel(
-                model=self._engine.provider.resolve_model(self.model_override),
+                model=model,
                 session_id=self._engine.session_id,
                 workspace=self._engine.workspace_root,
+                has_api_key=has_key,
+                key_source=key_src,
             ).render()
         )
 

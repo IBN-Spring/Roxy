@@ -189,7 +189,7 @@ class QueryEngine:
         except ProviderError as exc:
             logger.error(f"Provider error: {exc.message} (reason={exc.reason})")
             self._messages.pop()
-            yield TurnOutput("error", exc.message, {"reason": exc.reason})
+            yield TurnOutput("error", exc.message, {"reason": exc.reason, "fix": exc.fix})
             return
         except Exception as exc:
             logger.error(f"QueryEngine unexpected error: {exc}")
