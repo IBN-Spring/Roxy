@@ -741,6 +741,24 @@ class ChatScreen(Screen):
         except Exception:
             pass
 
+        # Topics
+        try:
+            from roxy.research.topic_manager import TopicManager
+            tm = TopicManager(self.config)
+            topics = tm.list_topics()
+            lines.append(f"[b]Topics[/b]")
+            if not topics:
+                lines.append(f"  [dim]None saved[/dim]")
+            else:
+                enabled = sum(1 for t in topics if t.enabled)
+                lines.append(f"  {enabled} enabled, {len(topics) - enabled} disabled")
+                for t in topics[:5]:
+                    icon = "[green]✓[/green]" if t.enabled else "[dim]○[/dim]"
+                    lines.append(f"  {icon} [cyan]{t.name}[/cyan] → {','.join(t.channels)} | {t.total_collected}")
+            lines.append("")
+        except Exception:
+            pass
+
         # Channels
         try:
             from roxy.research.channels import ALL_CHANNELS

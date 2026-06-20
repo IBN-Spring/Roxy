@@ -16,29 +16,26 @@ def test_monitor_run_json_exits_nonzero_on_collection_error(monkeypatch):
     class FakeSourceManager:
         def __init__(self, config):
             pass
-
         def list_feeds(self, enabled_only=False):
             return [FakeFeed()]
+
+    class FakeTopicManager:
+        def __init__(self, config):
+            pass
+        def list_topics(self, enabled_only=False):
+            return []
 
     class FakeContentCollector:
         def __init__(self, config):
             pass
-
-        async def collect_feeds(self, feeds, max_items=50):
+        async def collect(self, **kwargs):
             return {
-                "run_id": "test12345678",
-                "started_at": "2025-01-01T00:00:00",
-                "feeds_processed": 1,
-                "total_new": 0,
-                "total_dup": 0,
+                "items_found": 0, "items_new": 0, "items_duplicate": 0,
                 "errors": ["feed unavailable"],
-                "results": [{
-                    "feed": "Broken Feed", "url": "https://example.com/rss",
-                    "items_found": 0, "items_new": 0, "items_duplicate": 0,
-                }],
             }
 
     monkeypatch.setattr("roxy.research.source_manager.SourceManager", FakeSourceManager)
+    monkeypatch.setattr("roxy.research.topic_manager.TopicManager", FakeTopicManager)
     monkeypatch.setattr("roxy.research.collector.ContentCollector", FakeContentCollector)
 
     result = CliRunner().invoke(monitor_cmd, ["run", "--json"])
@@ -46,3 +43,29 @@ def test_monitor_run_json_exits_nonzero_on_collection_error(monkeypatch):
     assert result.exit_code == 1
     assert '"status": "partial"' in result.output
     assert "feed unavailable" in result.output
+
+def test_monitor_run_feeds_only(monkeypatch):
+    """--feeds-only skips topics."""
+
+    class FakeSourceManager:
+        def __init__(self, config): pass
+        def list_feeds(self, enabled_only=False):
+            return [FakeFeed()]
+
+    class FakeTopicManager:
+        def __init__(self, config):
+            raise AssertionError("Should not be called")
+        def list_topics(self, enabled_only=False): pass
+
+    class FakeContentCollector:
+        def __init__(self, config): pass
+        async def collect(self, **kwargs):
+            return {"items_found": 1, "items_new": 1, "items_duplicate": 0, "errors": []}
+
+    monkeypatch.setattr("roxy.research.source_manager.SourceManager", FakeSourceManager)
+    monkeypatch.setattr("roxy.research.topic_manager.TopicManager", FakeTopicManager)
+    monkeypatch.setattr("roxy.research.collector.ContentCollector", FakeContentCollector)
+
+    result = CliRunner().invoke(monitor_cmd, ["run", "--feeds-only"])
+    assert result.exit_code == 0
+    assert "1 new" in result.output or "complete" in result.output.lower()

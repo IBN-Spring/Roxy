@@ -151,6 +151,28 @@ def _doctor_rich(cfg: Config, verbose: bool) -> None:
     except Exception:
         console.print("  [dim]Channels not available[/dim]")
 
+    # ── Research Topics ──────────────────────────────────────────
+    console.print()
+    console.print("[bold]Research Topics:[/bold]")
+    try:
+        from roxy.research.topic_manager import TopicManager
+        tm = TopicManager(cfg)
+        topics = tm.list_topics()
+        if not topics:
+            console.print("  [dim]No saved topics.[/dim]")
+            console.print("  Add: [cyan]roxy research topics add \"name\" --channels arxiv[/cyan]")
+        else:
+            enabled = [t for t in topics if t.enabled]
+            with_errors = [t for t in topics if t.last_error]
+            console.print(f"  {len(enabled)} enabled, {len(topics) - len(enabled)} disabled, {len(with_errors)} with errors")
+            for t in topics:
+                icon = "[green]✓[/green]" if t.enabled else "[dim]○[/dim]"
+                err = f" [red]⚠[/red]" if t.last_error else ""
+                last = t.last_run_at[:16] if t.last_run_at else "never"
+                console.print(f"  {icon} [cyan]{t.name}[/cyan] → {','.join(t.channels)} | last: {last} | collected: {t.total_collected}{err}")
+    except Exception:
+        console.print("  [dim]Topic manager unavailable[/dim]")
+
     # ── Feed Sources ──────────────────────────────────────────────
     console.print()
     console.print("[bold]Feed Sources:[/bold]")
