@@ -3,9 +3,9 @@
 </h1>
 
 <p align="center">
-  <strong>垂直领域自主调研 Agent CLI/TUI</strong>
+  <strong>TUI-first vertical research agent with OKF knowledge and controlled evolution.</strong>
   <br>
-  <sub>Monitor sources, build an OKF knowledge base, and chat with your research workspace.</sub>
+  <sub>持续监控信息源，沉淀结构化知识，并用评估闭环让 Agent 可验证地变好。</sub>
 </p>
 
 <p align="center">
@@ -21,9 +21,76 @@
 
 ---
 
-Roxy 是一个终端里的研究助手：监控信息源、构建知识库、回答问题。
-它连接 RSS、ArXiv、PubMed 和微信公众号，将发现存入可移植的知识格式，
-让你在 TUI 中与研究内容对话。
+Roxy 是一个面向垂直领域研究的 Agent CLI/TUI。它不是一次性搜索工具，而是一个长期运行的研究工作台：持续追踪 RSS、ArXiv、PubMed、网页和微信公众号等来源，把发现写入受 Google OKF 思路启发的结构化知识库，再通过聊天、搜索、摘要和评估闭环帮助你不断积累领域知识。
+
+Roxy 的目标是做一个更像 Claude Code / Hermes 的终端 Agent，但核心场景不是写代码，而是 **自主调研、知识沉淀和受控自进化**。
+
+## 核心特点
+
+### 1. Controlled Evolution Engine
+
+Roxy 会记录真实交互轨迹，从失败案例生成 eval seeds，运行 baseline，输出改进建议，并比较候选版本是否真的变好。
+
+它不会自动覆盖 prompt、工具描述或核心代码。所有进化都必须经过：
+
+```text
+trace -> eval seeds -> eval run -> proposal -> compare -> human review
+```
+
+这让 Roxy 的改进不是“感觉更聪明了”，而是能看到提升、退化和风险。
+
+### 2. Google OKF-inspired Knowledge Store
+
+Roxy 使用 OKF v0.1 作为知识沉淀格式，设计思路参考 Google OKF：把来源、条目、主题、洞察和采集方式变成可验证的结构，而不是散落在聊天记录里的文本。它支持 JSON Schema 校验、JSONL 导入导出、SQLite + FTS5 搜索和重复内容去重。
+
+知识库不是聊天记录堆积，而是可迁移、可验证、可查询的结构化研究资产。
+
+```bash
+roxy knowledge search "spatial transcriptomics"
+roxy knowledge export --out kb.jsonl
+roxy knowledge validate kb.jsonl
+```
+
+### 3. Full-network Research Intake
+
+Roxy 的网络能力不是单个 web fetch，而是一层可扩展的研究采集协议。它通过统一 Channel 协议接入多种信息来源：
+
+| Channel | 状态 | 用途 |
+|---------|------|------|
+| `rss` | ready | 任意 RSS / Atom feed |
+| `arxiv` | ready | ArXiv 学术论文 |
+| `pubmed` | ready | PubMed / NCBI 论文 |
+| `wechat` | config | 微信公众号，只读适配 wechat-query SQLite |
+| `agent_reach_web` | external | 通过 Agent-Reach CLI 扩展网页能力 |
+
+Channel 有统一的 `check()`、`collect()`、`repair_hint()` 和 capability summary。外部能力通过 adapter 接入，Roxy core 保持干净。
+
+### 4. TUI-first Research Workbench
+
+Roxy 的主入口是终端 TUI，不需要在一堆命令之间来回跳。你可以在聊天界面里完成采集、查询、摘要、状态检查和 session 恢复。
+
+```text
+/status          总览模型、知识库、频道、最近采集
+/feeds           查看信息源状态
+/collect         采集所有 enabled feeds
+/collect topics  采集保存的研究方向
+/runs            查看采集历史
+/digest          生成最近 7 天研究摘要
+/kb <query>      搜索知识库
+/model           查看或切换模型
+```
+
+### 5. Persistent Domain Monitoring
+
+Roxy 可以保存长期关注的研究方向，然后定时监控：
+
+```bash
+roxy research topics add "single cell RNA-seq" --channels arxiv,pubmed
+roxy research topics add "large language models" --channels arxiv
+roxy monitor run --json
+```
+
+一次 monitor run 会同时处理 feeds 和 topics，生成 run history，后续可以按 run 出 digest 或回溯采集结果。
 
 ## 快速开始
 
@@ -37,154 +104,47 @@ roxy config set models.providers.deepseek.api_key "sk-..."
 roxy chat
 ```
 
-环境变量方式：
+也可以使用环境变量：
+
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
 roxy chat
 ```
 
-## 架构
+如果没有配置 API key，Roxy 会在 TUI、`/key` 和 `roxy doctor` 中给出修复命令。
 
-```
-roxy chat                     # Textual TUI — 研究助手
-  │
-  ├── /status /feeds /collect /runs /digest /kb /topics
-  ├── QueryEngine              # 多轮对话 loop + 工具调用
-  │   ├── file_read            # 工作区内文件读取
-  │   ├── web_fetch            # 网页抓取（仅 GET）
-  │   └── knowledge_query      # 搜索知识库
-  ├── ContextCompactor         # Micro-compact + auto-compact + 熔断
-  └── Safety                   # 权限系统 + 风险等级 + 工作区沙箱
+## 典型工作流
 
-roxy monitor run               # 统一采集：feeds + topics
-  ├── RSSChannel               # 任意 RSS/Atom
-  ├── ArXivChannel             # 学术论文（免费 API）
-  ├── PubMedChannel            # NCBI 论文（免费 API）
-  ├── WechatChannel            # 微信公众号（只读适配器）
-  └── AgentReachWebChannel     # 外部 CLI 桥接
-
-roxy knowledge                 # OKF v0.1 知识库
-  ├── SQLite + FTS5            # 运行时存储
-  ├── JSONL 导入/导出           # 可移植交换
-  └── Schema 校验              # 严格 OKF 合规
-
-roxy eval                      # 受控自进化
-  ├── seeds generate           # 从轨迹提取评估样本
-  ├── eval run                 # 基线评估（mock 或 live）
-  ├── eval propose             # 改进建议（不自动应用）
-  └── eval compare             # 版本对比 diff
-```
-
-## 能力概览
-
-| 类别 | 功能 |
-|------|------|
-| **Agent** | TUI 对话、流式输出、slash command、session 恢复 |
-| | 工具调用（file_read / web_fetch / knowledge_query）+ 权限门 |
-| | 上下文压缩（Micro + Auto + 熔断器） |
-| **研究** | 5 个频道：RSS、ArXiv、PubMed、微信公众号、Agent-Reach |
-| | 源管理：状态追踪、启用/停用、last_run / last_error |
-| | 研究方向：保存查询、多频道采集 |
-| | 摘要：Markdown 报告，按 source/date/tag 分组 |
-| | 采集历史：run 追踪，逐 feed 统计 |
-| **知识** | OKF v0.1：可移植 JSONL + JSON Schema 校验 |
-| | FTS5 全文搜索 + tag/source/date 过滤 |
-| | 导入/导出 JSONL，自动去重 |
-| **进化** | 轨迹记录：每轮对话隐私脱敏存储 |
-| | 评估框架：mock/live 评分 + baseline 报告 |
-| | 建议生成：失败分析 + 改进方案（仅输出，不自动改） |
-| | 版本对比：自动列出提升和退化 |
-| **安全** | 风险等级：safe < caution < dangerous < blocked |
-| | 工作区沙箱：bounded 工具无法越界 |
-| | 审批门：requires_approval 强制执行 |
-| | 密钥脱敏：config、doctor、TUI、traces、logs 全遮蔽 |
-| | 无自动应用：进化建议只输出 markdown |
-
-## 研究工作流
+### 持续追踪一个领域
 
 ```bash
-# 1. 添加信息源
-roxy research feeds add "机器之心" "https://jiqizhixin.com/rss"
-
-# 2. 保存研究方向
-roxy research topics add "单细胞RNA-seq" --channels arxiv,pubmed
-
-# 3. 一键采集
+roxy research topics add "spatial transcriptomics" --channels arxiv,pubmed
 roxy monitor run
-
-# 4. 搜索、摘要、导出
-roxy knowledge search "transformer"
 roxy research digest --days 7 --out weekly.md
-roxy knowledge export --out kb.jsonl
-roxy knowledge import kb.jsonl
+roxy knowledge search "cell atlas"
 ```
 
-在 TUI 内完成全部操作：
-```
-/collect           # 采集全部源
-/runs              # 查看最近采集
-/digest            # 7 天摘要
-/kb transformer    # 搜索知识库
-/feeds             # 源状态
-/topics            # 研究方向状态
-```
-
-## TUI 命令
-
-| 命令 | 功能 |
-|------|------|
-| `/help` | 显示所有命令 |
-| `/status` | 总览（模型、源、KB、频道、最近 run） |
-| `/doctor` | 健康检查 |
-| `/model` | 查看/切换模型 |
-| `/key` | API key 状态与配置 |
-| `/feeds` | 信息源状态 |
-| `/collect` | 采集全部源 |
-| `/collect topics` | 采集全部研究方向 |
-| `/runs` | 最近采集记录 |
-| `/digest [N\|latest]` | 研究摘要 |
-| `/kb <关键词>` | 搜索知识库 |
-| `/topics` | 研究方向 |
-| `/sessions` | 最近 session |
-| `/resume <id>` | 恢复 session |
-| `/clear` | 清屏 |
-| `/exit` | 退出 |
-
-## 频道
-
-| 频道 | 级别 | 说明 |
-|------|------|------|
-| `rss` | 0 · 就绪 | 任意 RSS/Atom |
-| `arxiv` | 0 · 就绪 | ArXiv 学术论文（免费 API，无需 key） |
-| `pubmed` | 0 · 就绪 | PubMed/NCBI 论文（免费 API，无需 key） |
-| `wechat` | 1 · 需配置 | 微信公众号（通过 wechat-query，只读） |
-| `agent_reach_web` | 1 · 外部工具 | 网页读取（通过 Agent-Reach CLI） |
+### 监控自己的信息源
 
 ```bash
-roxy research channels list
-roxy research channels doctor
-roxy research collect --channel arxiv --topic "LLM reasoning" --max-items 5
+roxy research feeds add "Hacker News" "https://hnrss.org/frontpage"
+roxy research feeds add "ArXiv ML" "http://export.arxiv.org/rss/cs.LG"
+roxy research collect --all
+roxy research runs latest
 ```
 
-## 知识格式 (OKF v0.1)
+### 在 TUI 中完成研究闭环
 
 ```bash
-roxy knowledge export --out kb.jsonl     # 导出
-roxy knowledge import kb.jsonl            # 导入
-roxy knowledge validate kb.jsonl          # 校验
-roxy knowledge schema                     # 查看 Schema
+roxy chat
+
+/collect
+/runs
+/digest latest
+/kb protein folding
 ```
 
-## 受控自进化
-
-Roxy 记录行为、生成评估用例、提出改进建议——
-**但绝不自动应用**。人来决定是否采纳。
-
-```
-轨迹记录 → 生成种子 → 评估运行 → 报告 → 改进建议 → 版本对比 → 人工审核 → 应用
-                                                              ↑
-                                                       人类决定
-```
+### 受控自进化
 
 ```bash
 roxy eval seeds generate --out seeds.jsonl
@@ -194,75 +154,137 @@ roxy eval run seeds.jsonl --out candidate.json
 roxy eval compare baseline.json candidate.json
 ```
 
-## 配置
+## 架构
 
-优先级：CLI 参数 > 环境变量 > `~/.roxy/config.yaml` > 默认值
+```text
+roxy chat
+  |
+  +-- Textual TUI
+  |     +-- slash commands
+  |     +-- visible tool calls
+  |     +-- session resume
+  |
+  +-- QueryEngine
+  |     +-- ModelProvider       多 provider 接入
+  |     +-- ContextManager      system prompt + profile + compaction
+  |     +-- ToolExecutor        权限检查 + 并行工具调用
+  |     +-- SessionManager      会话持久化
+  |
+  +-- Tools
+        +-- file_read           workspace-bounded
+        +-- web_fetch           GET-only
+        +-- knowledge_query     搜索 OKF 知识库
 
-| 配置项 | 环境变量 |
-|--------|---------|
-| `models.default` | `ROXY_MODELS_DEFAULT` |
-| `models.providers.<name>.api_key` | `ROXY_MODELS_PROVIDERS_<NAME>_API_KEY` |
-| `research.feeds` | — |
-| `research.topics_data` | — |
-| `research.wechat.db_path` | — |
-| `ROXY_HOME` | 隔离运行时目录 |
+roxy monitor run
+  |
+  +-- feeds                     RSS / custom source
+  +-- topics                    saved research topics
+  +-- channels                  rss / arxiv / pubmed / wechat / agent_reach_web
+  +-- run history               每次采集可追踪
 
-自动检测的常见环境变量：`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY` 等。
+roxy knowledge
+  |
+  +-- OKF JSONL                 import / export / validate
+  +-- SQLite + FTS5             本地全文搜索
+  +-- dedup                     URL + hash 去重
+
+roxy eval
+  |
+  +-- traces                    脱敏交互记录
+  +-- seeds                     评估样本
+  +-- run/report/propose        基线、报告、建议
+  +-- compare                   提升和退化对比
+```
 
 ## 命令速查
 
 ```bash
-roxy                          # TUI 对话（默认）
+roxy                          # 默认进入 TUI
 roxy init [--yes]             # 初始化
-roxy doctor                   # 健康检查
+roxy doctor [--json]          # 健康检查
 roxy config set/get/list      # 配置管理
-roxy chat [--no-tui]          # 对话（TUI 或 REPL）
+roxy chat [--no-tui]          # TUI 或纯文本 REPL
 
-roxy knowledge search <query> # 全文搜索
-roxy knowledge stats/export/import/validate/schema
+roxy knowledge search <query>
+roxy knowledge stats
+roxy knowledge export --out kb.jsonl
+roxy knowledge import kb.jsonl
+roxy knowledge validate kb.jsonl
+roxy knowledge schema
 
 roxy research feeds add/remove/list/status/enable/disable
 roxy research topics add/remove/list
 roxy research channels list/doctor
-roxy research collect [--url|--all|--topics]
-roxy research digest [--days|--run|--group-by|--out|--json]
+roxy research collect [--url | --all | --topics]
+roxy research digest [--days | --run | --group-by | --out | --json]
 roxy research runs list/latest/show
 
-roxy monitor run [--json|--feeds-only|--topics-only]
+roxy monitor run [--json | --feeds-only | --topics-only]
 
 roxy traces list/show/export
-roxy eval seeds generate / run / report / propose / compare
+roxy eval seeds generate
+roxy eval run/report/propose/compare
 
-roxy dev check [--quick]      # 发布检查
+roxy dev check [--quick]
 ```
+
+## 安全边界
+
+Roxy 默认把能力放进明确边界里：
+
+| 机制 | 说明 |
+|------|------|
+| Workspace sandbox | bounded 工具不能读取工作区外文件 |
+| Risk level | `safe < caution < dangerous < blocked` |
+| Approval gate | 需要审批的工具不会静默执行 |
+| Secret masking | config、doctor、trace、log 中遮蔽 API key |
+| No auto-apply | 自进化建议只生成 proposal，不自动改代码 |
+| External adapters | wechat-query / Agent-Reach 通过外部协议接入，不 import 源码 |
+
+## 配置
+
+配置优先级：
+
+```text
+CLI 参数 > 环境变量 > ~/.roxy/config.yaml > 默认值
+```
+
+常用配置：
+
+| 配置项 | 说明 |
+|--------|------|
+| `models.default` | 默认模型 |
+| `models.providers.<name>.api_key` | provider API key |
+| `research.feeds` | RSS/feed sources |
+| `research.topics_data` | saved research topics |
+| `research.wechat.db_path` | wechat-query SQLite 路径 |
+| `ROXY_HOME` | 隔离运行时目录 |
+
+Roxy 会自动检测常见环境变量，例如 `OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`。
 
 ## 开发
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest tests/          # 238 tests
-python -m roxy dev check          # 发布就绪检查
-bash scripts/demo.sh              # 端到端烟雾测试
+python -m pytest tests/
+python -m roxy dev check
+bash scripts/demo.sh
 ```
+
+当前测试规模：`238 passed`。
 
 ## 路线图
 
 | 版本 | 主题 |
 |------|------|
-| v0.1–0.2 | 核心 Agent：TUI、工具、安全门、上下文压缩 |
-| v0.3 | 研究工作台：知识库、RSS/ArXiv/PubMed、摘要、OKF |
-| v0.4 | 外部能力层：频道协议、学术频道、研究方向、统一监控 |
-| v0.5 | 受控自进化：轨迹记录、评估框架、改进建议（不自动应用） |
-| v0.6 | 发布加固：版本号、dev check、文档、发布清单 |
+| v0.1-v0.2 | Core Agent：CLI/TUI、工具、安全门、上下文压缩 |
+| v0.3 | Research Workbench：知识库、RSS/ArXiv/PubMed、摘要、OKF |
+| v0.4 | External Capability Layer：频道协议、学术频道、研究方向、统一监控 |
+| v0.5 | Controlled Evolution：trace、eval、proposal、compare |
+| v0.6 | Release Hardening：文档、dev check、版本一致性、发布清单 |
 
-详见 [docs/FORMAL_VERSION_PLAN.md](docs/FORMAL_VERSION_PLAN.md)
+详见 [docs/FORMAL_VERSION_PLAN.md](docs/FORMAL_VERSION_PLAN.md)。
 
-## 许可证
+## License
 
 MIT © [IBN-Spring](https://github.com/IBN-Spring)
-
----
-
-<div align="center">
-  <sub>Built with ❤️ by Roxy contributors</sub>
-</div>
