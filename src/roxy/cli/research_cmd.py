@@ -107,6 +107,115 @@ def feeds_remove(name: str) -> None:
         console.print(f"[yellow]Feed not found: '{name}'[/yellow]")
 
 
+@research_feeds.command("status")
+@click.argument("name", required=False)
+def feeds_status(name: str | None) -> None:
+    """Show feed collection status.
+
+    \b
+    Without arguments: summary of all feeds.
+    With a feed name: detailed status for that feed.
+    """
+    from roxy.config.loader import Config
+    from roxy.research.source_manager import SourceManager
+
+    cfg = Config()
+    cfg.load()
+    sm = SourceManager(cfg)
+
+    if name:
+        feed = sm.get_feed(name)
+        if not feed:
+            console.print(f"[yellow]Feed not found: '{name}'[/yellow]")
+            return
+        _print_feed_detail(feed)
+    else:
+        _print_feed_summary(sm)
+
+
+@research_feeds.command("enable")
+@click.argument("name")
+def feeds_enable(name: str) -> None:
+    """Enable a feed."""
+    from roxy.config.loader import Config
+    from roxy.research.source_manager import SourceManager
+
+    cfg = Config()
+    cfg.load()
+    sm = SourceManager(cfg)
+    if sm.set_enabled(name, True):
+        console.print(f"[green]✓[/green] Enabled: [cyan]{name}[/cyan]")
+    else:
+        console.print(f"[yellow]Feed not found: '{name}'[/yellow]")
+
+
+@research_feeds.command("disable")
+@click.argument("name")
+def feeds_disable(name: str) -> None:
+    """Disable a feed (stops it from being collected with --all)."""
+    from roxy.config.loader import Config
+    from roxy.research.source_manager import SourceManager
+
+    cfg = Config()
+    cfg.load()
+    sm = SourceManager(cfg)
+    if sm.set_enabled(name, False):
+        console.print(f"[green]✓[/green] Disabled: [cyan]{name}[/cyan]")
+    else:
+        console.print(f"[yellow]Feed not found: '{name}'[/yellow]")
+
+
+# ── feed display helpers ────────────────────────────────────────
+
+
+def _print_feed_detail(feed) -> None:
+    from roxy.research.source_manager import FeedSource
+
+    console.print()
+    console.print(f"[bold cyan]{feed.name}[/bold cyan]")
+    console.print(f"  URL:       {feed.url}")
+    console.print(f"  Status:    {'[green]enabled[/green]' if feed.enabled else '[dim]disabled[/dim]'}")
+    console.print(f"  Tags:      {', '.join(feed.tags) if feed.tags else '—'}")
+    console.print(f"  Total collected: {feed.total_collected}")
+    console.print(f"  Last run:  {feed.last_run_at[:19] if feed.last_run_at else 'never'}")
+    console.print(f"  Last success: {feed.last_success_at[:19] if feed.last_success_at else 'never'}")
+    if feed.last_error:
+        console.print(f"  Last error: [red]{feed.last_error}[/red]")
+    console.print()
+
+
+def _print_feed_summary(sm) -> None:
+    summary = sm.get_status_summary()
+    console.print()
+    console.print("[bold]Feed Status Summary[/bold]")
+    console.print(f"  Total:   {summary['total']}")
+    console.print(f"  Enabled: [green]{summary['enabled']}[/green]")
+    console.print(f"  Disabled: {summary['disabled']}")
+    if summary['with_errors']:
+        console.print(f"  With errors: [red]{summary['with_errors']}[/red]")
+    if summary['never_run']:
+        console.print(f"  Never run: [yellow]{summary['never_run']}[/yellow]")
+    console.print()
+
+    if summary['feeds']:
+        from rich.table import Table
+        table = Table(title="Feeds")
+        table.add_column("Name", style="cyan")
+        table.add_column("Status")
+        table.add_column("Collected", justify="right")
+        table.add_column("Last Run")
+        table.add_column("Last Error", style="red")
+
+        for f in summary['feeds']:
+            status = "[green]enabled[/green]" if f["enabled"] else "[dim]disabled[/dim]"
+            last_run = f["last_run_at"][:16] if f["last_run_at"] else "never"
+            err = f["last_error"][:40] if f["last_error"] else "—"
+            table.add_row(f["name"], status, str(f["total_collected"]), last_run, err)
+
+        console.print(table)
+        console.print()
+
+
 # ── collect ──────────────────────────────────────────────────────
 
 @research_cmd.command("collect")
@@ -138,7 +247,7 @@ def research_collect(
     cfg = Config()
     cfg.load()
 
-    async def _collect_one(ch: str, u: str) -> dict:
+    async def _collect_one(ch: str, u: str, fn: str = "") -> dict:
         collector = ContentCollector(cfg)
         return await collector.collect(
             channel_name=ch,
@@ -146,6 +255,7 @@ def research_collect(
             topic=topic,
             since=since,
             max_items=max_items,
+            feed_name=fn,
         )
 
     if collect_all:
@@ -164,7 +274,7 @@ def research_collect(
         for feed in feeds:
             console.print(f"  [cyan]{feed.name}[/cyan]...", end=" ")
             try:
-                result = asyncio.run(_collect_one("rss", feed.url))
+                result = asyncio.run(_collect_one("rss", feed.url, fn=feed.name))
                 total_found += result.get("items_found", 0)
                 total_new += result.get("items_new", 0)
                 total_dup += result.get("items_duplicate", 0)

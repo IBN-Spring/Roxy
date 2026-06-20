@@ -18,6 +18,39 @@ class TestFeedSource:
         assert fs.name == "X"
         assert not fs.enabled
 
+    def test_has_id(self):
+        fs = FeedSource(name="T", url="https://t.com")
+        assert fs.id
+        assert len(fs.id) == 12
+
+    def test_state_fields(self):
+        fs = FeedSource(name="S", url="https://s.com", tags=["ai"], total_collected=42)
+        d = fs.to_dict()
+        assert d["tags"] == ["ai"]
+        assert d["total_collected"] == 42
+        assert d["last_run_at"] == ""
+        assert d["last_error"] == ""
+
+    def test_has_error(self):
+        fs = FeedSource(name="E", url="https://e.com")
+        assert not fs.has_error
+        fs.last_error = "timeout"
+        assert fs.has_error
+
+    def test_from_dict_with_state(self):
+        d = {
+            "name": "Full", "url": "https://f.com", "enabled": True,
+            "id": "abc123def456", "tags": ["science"],
+            "last_run_at": "2025-01-01T00:00:00",
+            "last_success_at": "2025-01-01T00:00:01",
+            "last_error": "timeout", "total_collected": 10,
+        }
+        fs = FeedSource.from_dict(d)
+        assert fs.id == "abc123def456"
+        assert fs.tags == ["science"]
+        assert fs.total_collected == 10
+        assert fs.has_error
+
 
 class TestSourceManager:
     def test_list_empty(self, config: Config):
@@ -90,3 +123,55 @@ class TestSourceManager:
         feeds = sm2.list_feeds()
         assert len(feeds) >= 1
         assert any(f.name == "Persist" for f in feeds)
+
+    # ── state tracking ────────────────────────────────────────
+
+    def test_record_run_updates_last_run(self, config: Config):
+        config.load()
+        sm = SourceManager(config)
+        sm.add_feed("Runner", "https://r.com")
+        sm.record_run("Runner")
+        feed = sm.get_feed("Runner")
+        assert feed is not None
+        assert feed.last_run_at
+
+    def test_record_success_updates_state(self, config: Config):
+        config.load()
+        sm = SourceManager(config)
+        sm.add_feed("Success", "https://s.com")
+        sm.record_success("Success", 5)
+        feed = sm.get_feed("Success")
+        assert feed.last_success_at
+        assert feed.total_collected == 5
+        assert not feed.has_error
+
+    def test_record_error_updates_state(self, config: Config):
+        config.load()
+        sm = SourceManager(config)
+        sm.add_feed("Failer", "https://f.com")
+        sm.record_error("Failer", "Connection refused")
+        feed = sm.get_feed("Failer")
+        assert feed.has_error
+        assert "Connection refused" in feed.last_error
+
+    def test_record_success_clears_error(self, config: Config):
+        config.load()
+        sm = SourceManager(config)
+        sm.add_feed("Recover", "https://r.com")
+        sm.record_error("Recover", "old error")
+        sm.record_success("Recover", 3)
+        feed = sm.get_feed("Recover")
+        assert not feed.has_error
+        assert feed.total_collected == 3
+
+    def test_get_status_summary(self, config: Config):
+        config.load()
+        sm = SourceManager(config)
+        sm.add_feed("A", "https://a.com")
+        sm.add_feed("B", "https://b.com")
+        sm.set_enabled("B", False)
+        sm.record_error("A", "fail")
+        summary = sm.get_status_summary()
+        assert summary["total"] == 2
+        assert summary["enabled"] == 1
+        assert summary["with_errors"] == 1

@@ -55,12 +55,13 @@ def monitor_run(as_json: bool, max_items: int) -> None:
     if not as_json:
         console.print(f"[dim]Monitor: collecting from [cyan]{len(feeds)}[/cyan] feed(s)...[/dim]")
 
-    async def _collect(url: str) -> dict:
+    async def _collect(url: str, fn: str = "") -> dict:
         collector = ContentCollector(cfg)
         return await collector.collect(
             channel_name="rss",
             feed_url=url,
             max_items=max_items,
+            feed_name=fn,
         )
 
     results = []
@@ -69,7 +70,7 @@ def monitor_run(as_json: bool, max_items: int) -> None:
 
     for feed in feeds:
         try:
-            result = asyncio.run(_collect(feed.url))
+            result = asyncio.run(_collect(feed.url, fn=feed.name))
             results.append({
                 "feed": feed.name,
                 "url": feed.url,

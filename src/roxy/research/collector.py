@@ -35,6 +35,7 @@ class ContentCollector:
         topic: str = "",
         since: str | None = None,
         max_items: int = 50,
+        feed_name: str = "",
     ) -> dict:
         """Collect from a channel and write to the knowledge base.
 
@@ -44,9 +45,7 @@ class ContentCollector:
             topic: Optional topic filter.
             since: ISO 8601 — only collect items published after this.
             max_items: Max items to fetch.
-
-        Returns:
-            Dict with {channel, items_found, items_new, items_duplicate, errors}.
+            feed_name: Optional feed name for state tracking.
         """
         channel = get_channel(channel_name)
         if channel is None:
@@ -66,6 +65,7 @@ class ContentCollector:
         except Exception as exc:
             logger.error(f"Collector: channel '{channel_name}' failed: {exc}")
             self._log_collection(channel_name, feed_url, 0, 0, 0, str(exc), started_at)
+            self._record_feed_error(feed_name, str(exc))
             return {
                 "channel": channel_name,
                 "items_found": 0,
@@ -84,6 +84,9 @@ class ContentCollector:
             "",  # no errors
             started_at,
         )
+
+        # Track source state
+        self._record_feed_success(feed_name, counts["new"])
 
         return {
             "channel": channel_name,
@@ -141,6 +144,28 @@ class ContentCollector:
                 topic=topic,
                 since=since,
             )
+
+    def _record_feed_success(self, feed_name: str, new_count: int) -> None:
+        """Update source state after successful collection."""
+        if not feed_name:
+            return
+        try:
+            from roxy.research.source_manager import SourceManager
+            sm = SourceManager(self.config)
+            sm.record_success(feed_name, new_count)
+        except Exception as exc:
+            logger.warning(f"Failed to record feed success for '{feed_name}': {exc}")
+
+    def _record_feed_error(self, feed_name: str, error_msg: str) -> None:
+        """Update source state after failed collection."""
+        if not feed_name:
+            return
+        try:
+            from roxy.research.source_manager import SourceManager
+            sm = SourceManager(self.config)
+            sm.record_error(feed_name, error_msg)
+        except Exception as exc:
+            logger.warning(f"Failed to record feed error for '{feed_name}': {exc}")
 
     def _log_collection(
         self,

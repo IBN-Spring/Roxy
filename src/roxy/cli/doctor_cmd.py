@@ -147,6 +147,27 @@ def _doctor_rich(cfg: Config, verbose: bool) -> None:
     except Exception:
         console.print("  [dim]Channels not available[/dim]")
 
+    # ── Feed Sources ──────────────────────────────────────────────
+    console.print()
+    console.print("[bold]Feed Sources:[/bold]")
+    try:
+        from roxy.research.source_manager import SourceManager
+        sm = SourceManager(cfg)
+        summary = sm.get_status_summary()
+        if summary['total'] == 0:
+            console.print("  [dim]No feeds configured.[/dim]")
+            console.print("  Add one: [cyan]roxy research feeds add \"Name\" \"URL\"[/cyan]")
+        else:
+            console.print(f"  {summary['enabled']} enabled, {summary['disabled']} disabled, "
+                          f"{summary['with_errors']} with errors")
+            for f in summary['feeds']:
+                icon = "[green]✓[/green]" if f["enabled"] else "[dim]○[/dim]"
+                err = f"[red] ⚠ {f['last_error'][:60]}[/red]" if f["last_error"] else ""
+                last = f["last_run_at"][:16] if f["last_run_at"] else "never"
+                console.print(f"  {icon} [cyan]{f['name']}[/cyan] — last run: {last}, collected: {f['total_collected']}{err}")
+    except Exception:
+        console.print("  [dim]Source manager unavailable[/dim]")
+
     # ── Summary ──────────────────────────────────────────────────
     console.print()
     ok_count = sum(1 for r in results.values() if r["status"] == "ok")

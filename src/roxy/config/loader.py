@@ -40,7 +40,14 @@ class Config:
         tmp = self._path.with_suffix(".tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             yaml.safe_dump(self._data, f, allow_unicode=True, default_flow_style=False)
-        tmp.replace(self._path)
+        try:
+            tmp.replace(self._path)
+        except PermissionError:
+            # Windows: target may be locked — remove first then rename
+            import os
+            if self._path.exists():
+                self._path.unlink()
+            os.replace(str(tmp), str(self._path))
 
     # ── get / set ────────────────────────────────────────────────
 
