@@ -165,9 +165,20 @@ class EvalRunner:
         return hits / len(keywords)
 
     def build_report(self, model: str = "mock") -> dict:
-        """Build a summary report from results."""
+        """Build a summary report with metadata."""
+        from datetime import datetime, timezone
+        from roxy import __version__
+
+        metadata = {
+            "roxy_version": __version__,
+            "git_commit": _get_git_commit(),
+            "model": model,
+            "live": self.live,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
+
         if not self.results:
-            return {"total": 0, "passed": 0, "failed": 0, "avg_score": 0}
+            return {"metadata": metadata, "total": 0, "passed": 0, "failed": 0, "avg_score": 0}
 
         scores = [r.final_score for r in self.results]
         passed = sum(1 for r in self.results if r.passed)
@@ -186,6 +197,7 @@ class EvalRunner:
                 failures.append({"case_id": r.case_id, "reasons": reasons, "score": r.final_score})
 
         return {
+            "metadata": metadata,
             "model": model,
             "live": self.live,
             "total": len(self.results),
@@ -211,3 +223,44 @@ class EvalRunner:
                 for r in self.results
             ],
         }
+
+
+def _get_git_commit() -> str:
+    try:
+        import subprocess
+        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip()[:8] if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def compare_reports(baseline: dict, candidate: dict) -> dict:
+    """Compare two eval reports and return structured diff."""
+    b_results = {r["case_id"]: r for r in baseline.get("results", [])}
+    c_results = {r["case_id"]: r for r in candidate.get("results", [])}
+    b_avg = baseline.get("avg_score", 0)
+    c_avg = candidate.get("avg_score", 0)
+
+    improvements, regressions, unchanged = [], [], []
+    for case_id in sorted(set(b_results) | set(c_results)):
+        b = b_results.get(case_id, {})
+        c = c_results.get(case_id, {})
+        bs = b.get("final_score", 0)
+        cs = c.get("final_score", 0)
+        delta = round(cs - bs, 3)
+        entry = {
+            "case_id": case_id, "baseline_score": bs, "candidate_score": cs, "delta": delta,
+            "baseline_tool": b.get("tool_use_match", 0), "candidate_tool": c.get("tool_use_match", 0),
+            "baseline_kw": b.get("keyword_recall", 0), "candidate_kw": c.get("keyword_recall", 0),
+            "baseline_passed": b.get("passed", False), "candidate_passed": c.get("passed", False),
+        }
+        if delta > 0.05: improvements.append(entry)
+        elif delta < -0.05: regressions.append(entry)
+        else: unchanged.append(entry)
+
+    return {
+        "baseline_avg": b_avg, "candidate_avg": c_avg, "delta": round(c_avg - b_avg, 3),
+        "baseline_passed": baseline.get("passed", 0), "candidate_passed": candidate.get("passed", 0),
+        "improvements": improvements, "regressions": regressions, "unchanged": unchanged,
+        "baseline_meta": baseline.get("metadata", {}), "candidate_meta": candidate.get("metadata", {}),
+    }

@@ -199,3 +199,84 @@ def eval_propose(report_file: str, out: str, target: str) -> None:
     console.print()
     console.print("[dim]Review proposals before applying any changes.[/dim]")
     console.print("[dim]All changes must be test-gated and human-confirmed.[/dim]")
+
+
+# ── compare ──────────────────────────────────────────────────────
+
+@eval_cmd.command("compare")
+@click.argument("baseline_file", default="baseline.json")
+@click.argument("candidate_file", default="candidate.json")
+def eval_compare(baseline_file: str, candidate_file: str) -> None:
+    """Compare two eval reports side-by-side.
+
+    \b
+    Shows improvements, regressions, and unchanged cases.
+    After making prompt/tool changes, use this to check for regressions.
+    """
+    import json
+    from pathlib import Path
+    from roxy.evolution.eval_runner import compare_reports
+
+    for label, path in [("Baseline", baseline_file), ("Candidate", candidate_file)]:
+        if not Path(path).exists():
+            console.print(f"[yellow]{label} report not found: {path}[/yellow]")
+            return
+
+    with open(baseline_file, "r", encoding="utf-8") as f:
+        baseline = json.load(f)
+    with open(candidate_file, "r", encoding="utf-8") as f:
+        candidate = json.load(f)
+
+    diff = compare_reports(baseline, candidate)
+
+    console.print()
+    console.print("[bold]Eval Compare[/bold]")
+    console.print()
+
+    # Metadata
+    bm = diff.get("baseline_meta", {})
+    cm = diff.get("candidate_meta", {})
+    if bm or cm:
+        console.print(f"  Baseline:  [dim]{bm.get('roxy_version', '—')}  {bm.get('git_commit', '')}  {bm.get('model', '')}[/dim]")
+        console.print(f"  Candidate: [dim]{cm.get('roxy_version', '—')}  {cm.get('git_commit', '')}  {cm.get('model', '')}[/dim]")
+        console.print()
+
+    # Summary
+    delta = diff["delta"]
+    delta_str = f"[green]+{delta}[/green]" if delta > 0 else f"[red]{delta}[/red]" if delta < 0 else "0"
+    console.print(f"  Baseline:  avg [cyan]{diff['baseline_avg']}[/cyan] | passed {diff['baseline_passed']}")
+    console.print(f"  Candidate: avg [cyan]{diff['candidate_avg']}[/cyan] | passed {diff['candidate_passed']}")
+    console.print(f"  Delta:     {delta_str}")
+    console.print()
+
+    # Improvements
+    improvements = diff.get("improvements", [])
+    if improvements:
+        console.print(f"[bold green]{len(improvements)} improvement(s):[/bold green]")
+        for imp in improvements:
+            console.print(f"  [green]↑[/green] {imp['case_id']}: {imp['baseline_score']} → {imp['candidate_score']}"
+                          f" (tool: {imp['baseline_tool']}→{imp['candidate_tool']}, kw: {imp['baseline_kw']}→{imp['candidate_kw']})")
+        console.print()
+
+    # Regressions
+    regressions = diff.get("regressions", [])
+    if regressions:
+        console.print(f"[bold red]{len(regressions)} regression(s):[/bold red]")
+        for reg in regressions:
+            console.print(f"  [red]↓[/red] {reg['case_id']}: {reg['baseline_score']} → {reg['candidate_score']}"
+                          f" (tool: {reg['baseline_tool']}→{reg['candidate_tool']}, kw: {reg['baseline_kw']}→{reg['candidate_kw']})")
+        console.print()
+
+    unchanged = diff.get("unchanged", [])
+    if unchanged:
+        console.print(f"[dim]{len(unchanged)} unchanged[/dim]")
+        console.print()
+
+    # Verdict
+    if regressions:
+        console.print("[red]⚠ Regressions found — review changes before applying.[/red]")
+    elif not improvements:
+        console.print("[dim]No significant changes detected.[/dim]")
+    else:
+        console.print("[green]✓ All improvements, no regressions. Safe to apply.[/green]")
+    console.print()
