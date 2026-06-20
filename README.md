@@ -1,201 +1,163 @@
-# Roxy
+# Roxy v0.6.0
 
 **Vertical-domain autonomous research Agent CLI/TUI.**
 
-Roxy helps researchers gather, organize, and understand information.
-It monitors RSS feeds and WeChat public accounts, stores findings in a
-local knowledge base, and answers questions using LLM-powered chat —
+Roxy monitors RSS feeds, academic sources (ArXiv/PubMed), and WeChat public accounts,
+stores findings in a local knowledge base, and answers questions using LLM-powered chat —
 all from the terminal.
+
+## Quick Start
+
+```bash
+pip install -e ".[tui]"
+roxy init --yes --name "Researcher" --skip-provider
+roxy config set models.providers.deepseek.api_key "sk-..."
+roxy chat
+```
 
 ## Architecture
 
 ```
-roxy chat                    # Textual TUI — your AI research assistant
-    │
-    ├── QueryEngine          # Multi-turn agent loop with tool calling
-    │   ├── file_read        #   Read files (workspace-bounded)
-    │   ├── web_fetch        #   Fetch web pages (read-only)
-    │   └── knowledge_query  #   Search your personal KB
-    │
-    ├── ContextCompactor     # Three-layer compression (micro → auto → memory)
-    │   └── Circuit breaker  #   Stops retrying after 3 consecutive failures
-    │
-    └── Safety
-        ├── Workspace sandbox   #   Bounded tools can't escape workspace
-        ├── Risk levels         #   safe < caution < dangerous < blocked
-        └── Approval gate       #   requires_approval enforced by ToolExecutor
+roxy chat                     # Textual TUI — AI research workbench
+  ├── /status /feeds /collect /runs /digest /kb   # Research commands
+  ├── QueryEngine              # Multi-turn agent loop with tool calling
+  │   ├── file_read            # Workspace-bounded file reader
+  │   ├── web_fetch            # GET-only web page fetcher
+  │   └── knowledge_query      # Search personal knowledge base
+  ├── Context compaction       # Auto-compress long conversations
+  └── Safety gates             # Permission system + risk levels
 
-roxy research collect --all  # Gather from all your configured sources
-    │
-    ├── RSSChannel            #   feedparser-based RSS/Atom reader
-    ├── WechatChannel         #   Reads wechat-query SQLite (external, read-only)
-    └── KnowledgeWriter       #   Dedup by URL hash + content hash → SQLite FTS5
+roxy research collect --all    # Gather from all configured sources
+  ├── RSS feeds                # Any RSS/Atom feed (feedparser)
+  ├── ArXiv API                # Academic papers (free, no key)
+  ├── PubMed API               # NCBI papers (free, no key)
+  ├── WeChat (adapter)         # External wechat-query SQLite (read-only)
+  └── Agent-Reach (adapter)    # External CLI bridge
 
-roxy knowledge search "..."  # Query your personal research database
-roxy research digest --days 7  # Summarize recent findings
-roxy monitor run --json        # Cron-friendly one-shot collection
-```
-
-## Quick Start
-
-### 1. Install
-
-```bash
-git clone https://github.com/IBN-Spring/Roxy.git
-cd Roxy
-pip install -e ".[tui]"
-```
-
-### 2. Bootstrap
-
-```bash
-# Interactive wizard
-roxy init
-
-# Or non-interactive (scripts / CI / servers)
-roxy init --yes \
-  --name "Your Name" \
-  --domain "bioinformatics" \
-  --topic "single-cell" \
-  --topic "drug-design" \
-  --feed "Hacker News=https://hnrss.org/frontpage" \
-  --feed "ArXiv ML=http://export.arxiv.org/rss/cs.LG" \
-  --skip-provider
-
-# Use ROXY_HOME for isolated deployments
-ROXY_HOME=/tmp/roxy-test roxy init --yes --skip-provider
-```
-
-### 3. Configure a model provider
-
-```bash
-roxy config set models.providers.openai.api_key "sk-..."
-roxy config set models.default "openai/gpt-4.1-mini"
-
-# Or via environment variables
-export ROXY_MODELS_PROVIDERS_OPENAI_API_KEY="sk-..."
-```
-
-### 4. Start
-
-```bash
-roxy chat             # Textual TUI
-roxy chat --no-tui    # Plain REPL
-roxy doctor           # Health check
+roxy knowledge search "..."    # FTS5 full-text search
+roxy research digest --out     # Structured markdown research reports
+roxy eval run --live           # Controlled evolution harness
 ```
 
 ## Research Workflow
 
 ```bash
-# Add information sources
+# 1. Add information sources
 roxy research feeds add "Hacker News" "https://hnrss.org/frontpage"
-roxy research feeds list
 
-# Collect from all enabled feeds
-roxy research collect --all
+# 2. Save research topics for continuous monitoring
+roxy research topics add "single cell RNA-seq" --channels arxiv,pubmed
 
-# Search your knowledge base
-roxy knowledge search "transformer architecture"
-roxy knowledge stats
-
-# Generate a digest of recent findings
-roxy research digest --days 7
-roxy research digest --json --days 3
-
-# Ask Roxy about your research in chat
-roxy chat
-> "What have I collected about protein folding this week?"
-```
-
-## WeChat Integration
-
-Roxy integrates with [wechat-query](https://github.com/) as an **external service**.
-It reads the SQLite database that wechat-query produces — no source dependency.
-
-```bash
-roxy config set research.wechat.db_path "~/wechat-query/data/rss.db"
-roxy research collect --channel wechat
-roxy research collect --channel wechat --since "2025-06-01"
-```
-
-The connection is **read-only** (`mode=ro`) — Roxy cannot modify your wechat-query database.
-
-## Scheduled Monitoring
-
-```bash
-# One-shot collection
+# 3. One command to collect everything
 roxy monitor run
+# or in TUI: /collect
 
-# Cron-friendly JSON output (exit code 1 on errors)
-roxy monitor run --json
-
-# Cron example — every 6 hours
-# 0 */6 * * * roxy monitor run --json >> ~/.roxy/monitor.log
+# 4. Search, digest, export
+roxy knowledge search "transformer"
+roxy research digest --days 7 --out weekly.md
+roxy knowledge export --out kb.jsonl
+roxy knowledge import kb.jsonl
 ```
 
-## Commands
+## TUI Slash Commands (20 total)
 
-| Command | Description |
-|---------|-------------|
-| `roxy` | Launch TUI chat (default) |
-| `roxy init` | Bootstrap setup (interactive or `--yes`) |
-| `roxy doctor` | Health check — config, providers, tools, channels |
-| `roxy chat` | Interactive TUI (`--no-tui` for REPL) |
-| `roxy config set/get/list/path` | Manage configuration |
-| `roxy knowledge search <query>` | Full-text search KB |
-| `roxy knowledge stats` | KB statistics |
-| `roxy research feeds add/remove/list` | Manage RSS sources |
-| `roxy research collect [--url \| --all]` | Collect from feeds |
-| `roxy research digest [--days \| --json]` | Research digest |
-| `roxy monitor run [--json]` | One-shot collection |
-| `python -m roxy <cmd>` | Alternative if `roxy` isn't on PATH |
+| Category | Commands |
+|----------|----------|
+| Chat | `/help` `/status` `/key` `/clear` `/doctor` `/model` `/exit` |
+| Session | `/sessions` `/resume` |
+| Research | `/feeds` `/collect` `/runs` `/digest` `/kb` `/topics` |
 
-## Configuration
+## Channels
 
-**Priority**: CLI flags > environment variables > `~/.roxy/config.yaml` > defaults
+| Channel | Tier | Status | Description |
+|---------|------|--------|-------------|
+| `rss` | 0 | Ready | Any RSS/Atom feed |
+| `arxiv` | 0 | Ready | ArXiv academic papers (free API) |
+| `pubmed` | 0 | Ready | PubMed/NCBI papers (free API) |
+| `wechat` | 1 | Config | WeChat articles via wechat-query |
+| `agent_reach_web` | 1 | External | Web reading via Agent-Reach CLI |
 
-| Key | Env Var | Description |
-|-----|---------|-------------|
-| `models.default` | `ROXY_MODELS_DEFAULT` | Default model (`provider/model`) |
-| `models.providers.<name>.api_key` | `ROXY_MODELS_PROVIDERS_<NAME>_API_KEY` | Provider API key |
-| `user.name` | `ROXY_USER_NAME` | Display name |
-| `user.research_domain` | `ROXY_USER_RESEARCH_DOMAIN` | Research field |
-| `user.topics` | `ROXY_USER_TOPICS` | Comma-separated research topics |
-| `workspace.path` | `ROXY_WORKSPACE_PATH` | Workspace directory |
-| `research.feeds` | — | List of `{name, url, enabled}` feed objects |
-| `research.wechat.db_path` | — | Path to wechat-query `rss.db` |
-| `ROXY_HOME` | — | Override `~/.roxy` directory (for testing/isolation) |
+```bash
+roxy research channels list
+roxy research channels doctor
+```
+
+## Knowledge Format (OKF v0.1)
+
+Portable JSONL format with strict schema validation:
+
+```bash
+roxy knowledge export --out kb.jsonl
+roxy knowledge import kb.jsonl
+roxy knowledge validate kb.jsonl
+roxy knowledge schema
+```
+
+## Controlled Evolution
+
+```bash
+# Record agent behavior (automatic)
+# Generate eval seeds from traces
+roxy eval seeds generate --out seeds.jsonl
+
+# Baseline evaluation
+roxy eval run seeds.jsonl --out baseline.json
+
+# Generate improvement proposals (no auto-apply)
+roxy eval propose baseline.json --out proposals.md
+
+# Compare two versions
+roxy eval compare baseline.json candidate.json
+```
+
+Pipeline: `trace → seed → run → report → propose → compare → review → apply`
 
 ## Safety
 
-- **Workspace-bounded**: `file_read` cannot access files outside the workspace
-- **Risk levels**: `safe` < `caution` < `dangerous` < `blocked`
-- **Approval gate**: `requires_approval` enforced by `ToolExecutor` — caution+ tools don't run silently
-- **Read-only wechat**: WeChat DB opened with `mode=ro` URI
-- **Circuit breaker**: Auto-compact stops retrying after 3 consecutive failures
-- **No file write, no shell, no recursive sub-agents** — safety-first design
+- Workspace-bounded tools cannot escape workspace
+- Risk levels: `safe` < `caution` < `dangerous` < `blocked`
+- `requires_approval` enforced by ToolExecutor
+- Auto-compact circuit breaker prevents runaway API costs
+- WeChat DB read-only (`mode=ro`)
+- Secrets masked in doctor, config, traces, logs
+
+## Commands
+
+```bash
+roxy                        # TUI chat (default)
+roxy init [--yes]           # Bootstrap setup
+roxy doctor                 # Health check
+roxy config set/get/list    # Configuration
+roxy chat [--no-tui]        # Chat
+
+roxy knowledge search/stats/export/import/validate/schema
+roxy research feeds/collect/digest/runs/channels/topics
+roxy monitor run [--json] [--feeds-only|--topics-only]
+roxy traces list/show/export
+roxy eval seeds/run/report/propose/compare
+roxy dev check              # Release readiness
+```
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest tests/          # 180+ tests
-python -m roxy --version
-python -m roxy doctor --json
-bash scripts/demo.sh             # End-to-end smoke test
+python -m pytest tests/          # 238 tests
+python -m roxy dev check          # Release checks
+bash scripts/demo.sh              # End-to-end smoke
 ```
 
-## Roadmap
+## Release Checklist
 
-| Version | Theme | Highlights |
-|---------|-------|------------|
-| **v0.1** (current) | Core MVP | TUI chat, 3 tools, RSS/WeChat channels, KB + FTS5, compaction, safety gates |
-| **v0.2** | Productized MVP | TUI welcome + mascot, doctor KB/sessions, slash commands, session management |
-| **v0.3** | Research Workbench | Source last_run/last_error, digest grouping, OKF import/export, FTS fallback |
-| **v0.4** | External Capability | Agent-Reach adapter, ArXiv/PubMed channels, webhook notifications, provider routing |
-| **v0.5** | Controlled Evolution | Trace store, eval generation, prompt optimizer, human-reviewed diffs |
-
-See [docs/FORMAL_VERSION_PLAN.md](docs/FORMAL_VERSION_PLAN.md) for detailed requirements and acceptance criteria.
+- [ ] `python -m pytest tests/` all pass
+- [ ] `python -m roxy dev check` all pass
+- [ ] `python -m roxy --version` correct
+- [ ] `python -m roxy doctor --json` valid
+- [ ] `bash scripts/demo.sh` no failures
+- [ ] Fresh install: `ROXY_HOME=/tmp/roxy-fresh roxy init --yes --skip-provider`
+- [ ] `roxy eval run` mock mode works
+- [ ] README up to date
+- [ ] `git tag v<VERSION>`
 
 ## License
 

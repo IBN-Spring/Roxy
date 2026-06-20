@@ -83,3 +83,10 @@ try:
     main.add_command(eval_cmd)
 except ImportError:
     pass
+
+# dev tools
+try:
+    from roxy.cli.dev_cmd import dev_cmd
+    main.add_command(dev_cmd)
+except ImportError:
+    pass
