@@ -91,6 +91,7 @@ def eval_run(cases_file: str, out: str, live: bool, model: str | None) -> None:
     console.print(f"  Avg score: {report['avg_score']} | Avg latency: {report['avg_latency']}s")
     console.print()
     console.print(f"View details: [cyan]roxy eval report {out}[/cyan]")
+    console.print(f"Generate proposals: [cyan]roxy eval propose {out}[/cyan]")
 
 
 # ── report ───────────────────────────────────────────────────────
@@ -150,3 +151,51 @@ def eval_report(report_file: str) -> None:
             )
         console.print(table)
         console.print()
+
+
+# ── propose ──────────────────────────────────────────────────────
+
+@eval_cmd.command("propose")
+@click.argument("report_file", default="eval_report.json")
+@click.option("--out", "-o", default="", help="Output markdown path.")
+@click.option("--target", "-t", default="all", help="Target: all, system-prompt, tool-descriptions.")
+def eval_propose(report_file: str, out: str, target: str) -> None:
+    """Generate improvement proposals from an eval report.
+
+    \b
+    Analyzes failed eval cases and produces actionable suggestions.
+    Does NOT modify any files. Human review required.
+
+    Example:
+      roxy eval propose baseline.json --out proposals.md
+    """
+    from pathlib import Path
+    from roxy.evolution.proposer import ProposalGenerator
+
+    report_path = Path(report_file)
+    if not report_path.exists():
+        console.print(f"[yellow]Report not found: {report_file}[/yellow]")
+        console.print("Run: roxy eval run eval_seeds.jsonl --out baseline.json")
+        return
+
+    # Default output path
+    if not out:
+        from datetime import datetime
+        date_str = datetime.now().strftime("%Y%m%d")
+        out = f"proposals-{date_str}.md"
+
+    try:
+        gen = ProposalGenerator()
+        count = gen.generate(report_path, Path(out), target=target)
+    except Exception as exc:
+        console.print(f"[red]Proposal generation failed: {exc}[/red]")
+        return
+
+    if count == 0:
+        console.print("[green]✓[/green] No failures — all cases passed. No proposals needed.")
+    else:
+        console.print(f"[green]✓[/green] Generated [cyan]{count}[/cyan] proposal(s) → [cyan]{out}[/cyan]")
+
+    console.print()
+    console.print("[dim]Review proposals before applying any changes.[/dim]")
+    console.print("[dim]All changes must be test-gated and human-confirmed.[/dim]")
