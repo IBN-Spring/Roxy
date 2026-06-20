@@ -6,7 +6,9 @@
 
 <p align="left">
   <a href="https://github.com/IBN-Spring/Roxy">Roxy Agent</a>
-  ·
+</p>
+
+<p align="center">
   <a href="docs/FORMAL_VERSION_PLAN.md">Documentation</a>
   ·
   <a href="https://github.com/IBN-Spring/Roxy/blob/main/LICENSE">License: MIT</a>
