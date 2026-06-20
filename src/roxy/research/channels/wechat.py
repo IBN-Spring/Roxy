@@ -32,9 +32,22 @@ class WechatChannel(Channel):
 
     name: str = "wechat"
     description: str = "WeChat public account articles (via wechat-query SQLite)"
-    tier: int = 1  # needs wechat-query setup
+    tier: int = 1
+    requires_config: list[str] = ["research.wechat.db_path"]
+    config_keys: dict[str, str] = {
+        "research.wechat.db_path": "Path to wechat-query rss.db",
+    }
 
     DEFAULT_DB_PATH: str = "~/wechat-query/data/rss.db"
+
+    def repair_hint(self, status: str, message: str) -> str:
+        if status == "off":
+            return (
+                f"Channel 'wechat' needs the wechat-query database path.\n"
+                f"  1. Install and run wechat-query to populate the DB\n"
+                f"  2. Configure: [cyan]roxy config set research.wechat.db_path \"~/wechat-query/data/rss.db\"[/cyan]"
+            )
+        return super().repair_hint(status, message)
 
     async def check(self, config: Config) -> tuple[str, str]:
         """Verify the wechat-query SQLite DB is accessible."""

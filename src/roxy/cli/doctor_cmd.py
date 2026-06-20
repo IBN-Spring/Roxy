@@ -144,6 +144,10 @@ def _doctor_rich(cfg: Config, verbose: bool) -> None:
             console.print(f"  {tier_icon} {status_icon} [cyan]{ch.name}[/cyan] — {ch.description}")
             if status != "ok":
                 console.print(f"       [dim]{msg}[/dim]")
+                # Show repair hint if available
+                hint = ch.repair_hint(status, msg)
+                if hint:
+                    console.print(f"       [yellow]fix:[/yellow] {hint}")
     except Exception:
         console.print("  [dim]Channels not available[/dim]")
 

@@ -315,6 +315,87 @@ def research_collect(
     console.print()
 
 
+# ── channels ────────────────────────────────────────────────────
+
+@research_cmd.group("channels")
+def research_channels() -> None:
+    """List and check research channels.
+
+    \b
+    Examples:
+      roxy research channels list
+      roxy research channels doctor
+    """
+    pass
+
+
+@research_channels.command("list")
+def channels_list() -> None:
+    """List all registered research channels."""
+    from roxy.research.channels import ALL_CHANNELS
+
+    if not ALL_CHANNELS:
+        console.print("[dim]No channels registered.[/dim]")
+        return
+
+    table = Table(title="Research Channels")
+    table.add_column("Name", style="cyan")
+    table.add_column("Tier")
+    table.add_column("Config Required")
+    table.add_column("Description")
+
+    for ch in ALL_CHANNELS:
+        tier_label = {0: "[green]0 (ready)[/green]", 1: "[yellow]1 (config)[/yellow]", 2: "[red]2 (complex)[/red]"}.get(ch.tier, str(ch.tier))
+        config = ", ".join(ch.requires_config) if ch.requires_config else "—"
+        table.add_row(ch.name, tier_label, config, ch.description)
+
+    console.print(table)
+
+
+@research_channels.command("doctor")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def channels_doctor(as_json: bool) -> None:
+    """Check all channels and show repair hints."""
+    import asyncio
+    from roxy.config.loader import Config
+    from roxy.research.channels import ALL_CHANNELS
+
+    cfg = Config()
+    cfg.load()
+
+    results = []
+    for ch in ALL_CHANNELS:
+        try:
+            status, msg = asyncio.run(ch.check(cfg))
+        except Exception:
+            status, msg = "error", "check failed"
+        hint = ch.repair_hint(status, msg) if status != "ok" else ""
+        results.append({
+            "name": ch.name,
+            "description": ch.description,
+            "tier": ch.tier,
+            "status": status,
+            "message": msg,
+            "repair_hint": hint,
+            "requires_config": ch.requires_config,
+        })
+
+    if as_json:
+        import json
+        click.echo(json.dumps(results, indent=2, ensure_ascii=False))
+        return
+
+    console.print()
+    for r in results:
+        icon = {"ok": "[green]✓[/green]", "warn": "[yellow]![/yellow]", "off": "[dim]○[/dim]"}.get(r["status"], "[red]✗[/red]")
+        console.print(f"  {icon} [cyan]{r['name']}[/cyan] — {r['description']}")
+        if r["status"] != "ok":
+            console.print(f"       [dim]{r['message']}[/dim]")
+        if r["repair_hint"]:
+            console.print(f"       [yellow]fix:[/yellow] {r['repair_hint']}")
+        console.print()
+
+
 # ── runs ─────────────────────────────────────────────────────────
 
 @research_cmd.group("runs")

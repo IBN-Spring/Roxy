@@ -35,6 +35,8 @@ class RSSChannel(Channel):
     name: str = "rss"
     description: str = "RSS / Atom feed reader"
     tier: int = 0
+    requires_config: list[str] = []
+    config_keys: dict[str, str] = {}
 
     async def check(self, config: Config) -> tuple[str, str]:
         """Verify feedparser is importable."""

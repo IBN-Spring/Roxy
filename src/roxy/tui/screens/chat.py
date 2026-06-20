@@ -693,6 +693,26 @@ class ChatScreen(Screen):
         except Exception:
             pass
 
+        # Channels
+        try:
+            from roxy.research.channels import ALL_CHANNELS
+            import asyncio as _asyncio
+            lines.append(f"[b]Channels[/b]")
+            for ch in ALL_CHANNELS:
+                try:
+                    status, msg = _asyncio.run(ch.check(self.config))
+                except Exception:
+                    status, msg = "error", "check failed"
+                icon = {"ok": "[green]✓[/green]", "warn": "[yellow]![/yellow]", "off": "[dim]○[/dim]"}.get(status, "[red]✗[/red]")
+                lines.append(f"  {icon} [cyan]{ch.name}[/cyan] (tier {ch.tier})")
+                if status != "ok":
+                    hint = ch.repair_hint(status, msg)
+                    if hint:
+                        lines.append(f"     [yellow]fix:[/yellow] {hint[:120]}")
+            lines.append("")
+        except Exception:
+            pass
+
         # Workspace
         if self._engine:
             try:
