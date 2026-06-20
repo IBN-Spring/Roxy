@@ -70,3 +70,16 @@ try:
     main.add_command(monitor_cmd)
 except ImportError:
     pass
+
+# Phase 5: traces + eval
+try:
+    from roxy.cli.trace_cmd import trace_cmd
+    main.add_command(trace_cmd)
+except ImportError:
+    pass
+
+try:
+    from roxy.cli.eval_cmd import eval_cmd
+    main.add_command(eval_cmd)
+except ImportError:
+    pass

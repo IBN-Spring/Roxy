@@ -19,6 +19,7 @@ from roxy.tools.base import RiskLevel, ToolContext
 from roxy.tools.builtin import ReadFileTool, WebFetchTool, KnowledgeQueryTool
 from roxy.tools.permissions import PermissionManager
 from roxy.tools.registry import ToolRegistry
+from roxy.evolution.tracer import TraceRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,12 @@ class QueryEngine:
         model: str | None = None,
     ) -> AsyncGenerator[TurnOutput, None]:
         """Submit a user message, run the agent loop, stream the final response."""
+        import time as _time
+        t_start = _time.time()
+        trace_calls: list[str] = []
+        trace_errors: list[str] = []
+        final_text = ""
+
         self._messages.append({"role": "user", "content": user_input})
 
         resolved_model = self.provider.resolve_model(model)
@@ -131,6 +138,7 @@ class QueryEngine:
                         f"Calling {len(tool_calls)} tool(s)...",
                         {"calls": [tc["function"]["name"] for tc in tool_calls]},
                     )
+                    trace_calls.extend(tc["function"]["name"] for tc in tool_calls)
 
                     batch = await self.tool_executor.execute_batch(tool_calls)
 
@@ -172,6 +180,7 @@ class QueryEngine:
                 elif text_content:
                     # Final text response
                     full_response = text_content
+                    final_text = full_response
                     self._messages.append({"role": "assistant", "content": full_response})
                     yield TurnOutput("chunk", full_response)
                     break
@@ -189,7 +198,10 @@ class QueryEngine:
         except ProviderError as exc:
             logger.error(f"Provider error: {exc.message} (reason={exc.reason})")
             self._messages.pop()
+            trace_errors.append(exc.message[:200])
             yield TurnOutput("error", exc.message, {"reason": exc.reason, "fix": exc.fix})
+            _record_trace(self.session_id, user_input, resolved_model, trace_calls,
+                          trace_errors, "", _time.time() - t_start)
             return
         except Exception as exc:
             logger.error(f"QueryEngine unexpected error: {exc}")
@@ -203,6 +215,10 @@ class QueryEngine:
             self.session_manager.save(self.session)
         except Exception as exc:
             logger.warning(f"Failed to save session: {exc}")
+
+        # Record trace
+        _record_trace(self.session_id, user_input, resolved_model, trace_calls,
+                      trace_errors, final_text, _time.time() - t_start)
 
         yield TurnOutput("done", self._messages[-1].get("content", ""), {"message_count": len(self._messages)})
 
@@ -265,3 +281,22 @@ class QueryEngine:
     @property
     def session_id(self) -> str:
         return self.session.id
+
+
+def _record_trace(session_id: str, user_input: str, model: str,
+                  tool_calls: list[str], errors: list[str],
+                  final_response: str, duration: float) -> None:
+    """Record one turn to the trace store. Best-effort, never crashes."""
+    try:
+        from roxy.evolution.tracer import TraceRecorder
+        recorder = TraceRecorder(session_id)
+        recorder.record_turn({
+            "user_message": user_input,
+            "model": model,
+            "tool_calls_summary": ",".join(tool_calls) if tool_calls else "",
+            "errors": errors,
+            "final_response": final_response[:2000] if final_response else "",
+            "duration": round(duration, 3),
+        })
+    except Exception:
+        pass  # Trace recording is best-effort
