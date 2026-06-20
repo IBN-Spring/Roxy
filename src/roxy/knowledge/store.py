@@ -53,7 +53,27 @@ class KnowledgeStore:
     def init_db(self) -> None:
         """Create tables and indexes if they don't exist."""
         self.conn.executescript(SQLITE_SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns that may be missing from older DB versions."""
+        existing = {r[1] for r in self.conn.execute(
+            "PRAGMA table_info(collection_log)"
+        ).fetchall()}
+        migrations = [
+            ("run_id", "TEXT DEFAULT ''"),
+            ("source_name", "TEXT DEFAULT ''"),
+        ]
+        for col_name, col_def in migrations:
+            if col_name not in existing:
+                try:
+                    self.conn.execute(
+                        f"ALTER TABLE collection_log ADD COLUMN {col_name} {col_def}"
+                    )
+                    self.conn.commit()
+                except Exception:
+                    pass
 
     # ── CRUD ─────────────────────────────────────────────────────
 

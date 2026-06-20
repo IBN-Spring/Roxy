@@ -168,6 +168,23 @@ def _doctor_rich(cfg: Config, verbose: bool) -> None:
     except Exception:
         console.print("  [dim]Source manager unavailable[/dim]")
 
+    # ── Last Collection Run ──────────────────────────────────────
+    console.print()
+    console.print("[bold]Last Collection Run:[/bold]")
+    try:
+        from roxy.research.run_history import RunHistory
+        rh = RunHistory()
+        last = rh.latest_run()
+        if last:
+            started = last["started_at"][:16] if last["started_at"] else "—"
+            err_str = f" [red]{last['error_count']} errors[/red]" if last["error_count"] else ""
+            console.print(f"  [cyan]{last['run_id'][:8]}[/cyan] — {started} — "
+                          f"{last['feed_count']} feeds, [green]{last['total_new']} new[/green]{err_str}")
+        else:
+            console.print("  [dim]No collection runs yet. Run [cyan]roxy research collect --all[/cyan][/dim]")
+    except Exception:
+        console.print("  [dim]Run history unavailable[/dim]")
+
     # ── Summary ──────────────────────────────────────────────────
     console.print()
     ok_count = sum(1 for r in results.values() if r["status"] == "ok")

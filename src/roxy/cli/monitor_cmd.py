@@ -55,49 +55,21 @@ def monitor_run(as_json: bool, max_items: int) -> None:
     if not as_json:
         console.print(f"[dim]Monitor: collecting from [cyan]{len(feeds)}[/cyan] feed(s)...[/dim]")
 
-    async def _collect(url: str, fn: str = "") -> dict:
-        collector = ContentCollector(cfg)
-        return await collector.collect(
-            channel_name="rss",
-            feed_url=url,
-            max_items=max_items,
-            feed_name=fn,
-        )
-
-    results = []
-    total_new = 0
-    errors = []
-
-    for feed in feeds:
-        try:
-            result = asyncio.run(_collect(feed.url, fn=feed.name))
-            results.append({
-                "feed": feed.name,
-                "url": feed.url,
-                "items_found": result.get("items_found", 0),
-                "items_new": result.get("items_new", 0),
-                "items_duplicate": result.get("items_duplicate", 0),
-            })
-            total_new += result.get("items_new", 0)
-            if result.get("errors"):
-                errors.extend(result["errors"])
-        except Exception as exc:
-            results.append({
-                "feed": feed.name,
-                "url": feed.url,
-                "items_found": 0,
-                "items_new": 0,
-                "items_duplicate": 0,
-                "error": str(exc),
-            })
-            errors.append(f"{feed.name}: {exc}")
+    collector = ContentCollector(cfg)
+    run = asyncio.run(collector.collect_feeds(feeds, max_items=max_items))
+    results = run["results"]
+    total_new = run["total_new"]
+    errors = run["errors"]
 
     if as_json:
         import json
         output = {
             "status": "ok" if not errors else "partial",
-            "feeds_processed": len(feeds),
+            "run_id": run["run_id"],
+            "started_at": run["started_at"],
+            "feeds_processed": run["feeds_processed"],
             "total_new": total_new,
+            "total_dup": run["total_dup"],
             "errors": errors,
             "results": results,
         }

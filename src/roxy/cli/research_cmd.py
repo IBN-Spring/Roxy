@@ -267,35 +267,25 @@ def research_collect(
             return
 
         console.print(f"[dim]Collecting from [cyan]{len(feeds)}[/cyan] feed(s)...[/dim]")
-        total_new = 0
-        total_dup = 0
-        total_found = 0
+        collector = ContentCollector(cfg)
 
         for feed in feeds:
             console.print(f"  [cyan]{feed.name}[/cyan]...", end=" ")
             try:
                 result = asyncio.run(_collect_one("rss", feed.url, fn=feed.name))
-                total_found += result.get("items_found", 0)
-                total_new += result.get("items_new", 0)
-                total_dup += result.get("items_duplicate", 0)
+                new_c = result.get("items_new", 0)
+                dup_c = result.get("items_duplicate", 0)
                 errs = result.get("errors", [])
                 if errs:
                     console.print(f"[red]✗ {errs[0]}[/red]")
                 else:
-                    console.print(f"[green]{result['items_new']} new[/green], {result['items_duplicate']} dup")
+                    console.print(f"[green]{new_c} new[/green], {dup_c} dup")
             except Exception as exc:
                 console.print(f"[red]✗ {exc}[/red]")
 
         console.print()
-        console.print("[bold green]Collection complete:[/bold green]")
-        console.print(f"  Feeds processed:  {len(feeds)}")
-        console.print(f"  Items found:      {total_found}")
-        console.print(f"  New entries:      [green]{total_new}[/green]")
-        console.print(f"  Duplicates:       [yellow]{total_dup}[/yellow]")
-        console.print()
-        if total_new > 0:
-            console.print(f"Search: [cyan]roxy knowledge search \"<keyword>\"[/cyan]")
-            console.print(f"Digest: [cyan]roxy research digest[/cyan]")
+        console.print("[bold green]Collection complete.[/bold green]")
+        console.print(f"  View: [cyan]roxy research runs latest[/cyan]")
         console.print()
         return
 
@@ -323,6 +313,116 @@ def research_collect(
     console.print(f"  New entries:      [green]{result['items_new']}[/green]")
     console.print(f"  Duplicates:       [yellow]{result['items_duplicate']}[/yellow]")
     console.print()
+
+
+# ── runs ─────────────────────────────────────────────────────────
+
+@research_cmd.group("runs")
+def research_runs() -> None:
+    """View collection run history.
+
+    \b
+    Examples:
+      roxy research runs list
+      roxy research runs latest
+      roxy research runs show <run_id>
+    """
+    pass
+
+
+@research_runs.command("list")
+@click.option("--limit", "-n", default=10, help="Max runs to show.")
+def runs_list(limit: int) -> None:
+    """List recent collection runs."""
+    from roxy.research.run_history import RunHistory
+
+    rh = RunHistory()
+    runs = rh.list_runs(limit=limit)
+
+    if not runs:
+        console.print("[yellow]No collection runs yet.[/yellow]")
+        console.print("Run: [cyan]roxy research collect --all[/cyan]")
+        return
+
+    from rich.table import Table
+    table = Table(title="Collection Run History")
+    table.add_column("Run ID", style="cyan")
+    table.add_column("Started")
+    table.add_column("Feeds")
+    table.add_column("New", justify="right")
+    table.add_column("Errors", justify="right")
+
+    for r in runs:
+        started = r["started_at"][:16] if r["started_at"] else "—"
+        err_str = f"[red]{r['error_count']}[/red]" if r["error_count"] else "0"
+        table.add_row(r["run_id"][:8], started, str(r["feed_count"]),
+                      str(r["total_new"]), err_str)
+
+    console.print(table)
+    console.print(f"\n[dim]{len(runs)} run(s)[/dim]")
+
+
+@research_runs.command("latest")
+def runs_latest() -> None:
+    """Show the most recent collection run."""
+    from roxy.research.run_history import RunHistory
+
+    rh = RunHistory()
+    run = rh.latest_run()
+
+    if not run:
+        console.print("[yellow]No collection runs yet.[/yellow]")
+        return
+
+    _print_run_detail(run)
+
+
+@research_runs.command("show")
+@click.argument("run_id")
+def runs_show(run_id: str) -> None:
+    """Show details of a specific run."""
+    from roxy.research.run_history import RunHistory
+
+    rh = RunHistory()
+    run = rh.get_run(run_id)
+    if not run:
+        # Try prefix match
+        runs = rh.list_runs()
+        matches = [r for r in runs if r["run_id"].startswith(run_id)]
+        if len(matches) == 1:
+            run = rh.get_run(matches[0]["run_id"])
+        elif len(matches) > 1:
+            console.print(f"[yellow]Ambiguous prefix. Matches: {', '.join(r['run_id'][:8] for r in matches)}[/yellow]")
+            return
+
+    if not run:
+        console.print(f"[yellow]Run '{run_id}' not found.[/yellow]")
+        return
+
+    _print_run_detail(run)
+
+
+def _print_run_detail(run: dict) -> None:
+    console.print()
+    console.print(f"[bold]Run [cyan]{run['run_id'][:8]}[/cyan][/bold]")
+    console.print(f"  Started:    {run.get('started_at', '—')[:19]}")
+    console.print(f"  Finished:   {run.get('finished_at', '—')[:19]}")
+    console.print(f"  Feeds:      {run.get('feed_count', 0)}")
+    console.print(f"  Total new:  [green]{run.get('total_new', 0)}[/green]")
+    console.print(f"  Duplicates: {run.get('total_dup', 0)}")
+    err_count = run.get('error_count', 0)
+    console.print(f"  Errors:     {'[red]' + str(err_count) + '[/red]' if err_count else '0'}")
+    console.print()
+
+    feeds = run.get("feeds", [])
+    if feeds:
+        for f in feeds:
+            icon = "[green]✓[/green]" if not f["errors"] else "[red]✗[/red]"
+            src = f["source_name"] or f["channel_name"]
+            console.print(f"  {icon} [cyan]{src}[/cyan] — "
+                          f"{f['items_new']} new, {f['items_duplicate']} dup"
+                          + (f" ([red]{f['errors'][:60]}[/red])" if f["errors"] else ""))
+        console.print()
 
 
 # ── digest ───────────────────────────────────────────────────────

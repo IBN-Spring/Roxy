@@ -24,12 +24,18 @@ def test_monitor_run_json_exits_nonzero_on_collection_error(monkeypatch):
         def __init__(self, config):
             pass
 
-        async def collect(self, **kwargs):
+        async def collect_feeds(self, feeds, max_items=50):
             return {
-                "items_found": 0,
-                "items_new": 0,
-                "items_duplicate": 0,
+                "run_id": "test12345678",
+                "started_at": "2025-01-01T00:00:00",
+                "feeds_processed": 1,
+                "total_new": 0,
+                "total_dup": 0,
                 "errors": ["feed unavailable"],
+                "results": [{
+                    "feed": "Broken Feed", "url": "https://example.com/rss",
+                    "items_found": 0, "items_new": 0, "items_duplicate": 0,
+                }],
             }
 
     monkeypatch.setattr("roxy.research.source_manager.SourceManager", FakeSourceManager)

@@ -128,7 +128,9 @@ CREATE TABLE IF NOT EXISTS follow_ups (
 -- Collection log (for debugging / auditing)
 CREATE TABLE IF NOT EXISTS collection_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT DEFAULT '',
     channel_name TEXT NOT NULL,
+    source_name TEXT DEFAULT '',
     feed_url TEXT DEFAULT '',
     items_found INTEGER DEFAULT 0,
     items_new INTEGER DEFAULT 0,
@@ -137,6 +139,9 @@ CREATE TABLE IF NOT EXISTS collection_log (
     started_at TEXT NOT NULL,
     finished_at TEXT DEFAULT ''
 );
+
+CREATE INDEX IF NOT EXISTS idx_collection_log_run ON collection_log(run_id);
+CREATE INDEX IF NOT EXISTS idx_collection_log_started ON collection_log(started_at);
 """
 
 
