@@ -15,6 +15,7 @@ from roxy.engine.session import Session, SessionManager
 from roxy.tui.widgets.input_area import InputArea
 from roxy.tui.widgets.message import MessageWidget
 from roxy.tui.widgets.status_bar import StatusBar
+from roxy.tui.widgets.welcome import WelcomePanel
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,15 @@ class ChatScreen(Screen):
     ChatScreen {
         layout: vertical;
     }
+    #chat-shell {
+        height: 1fr;
+        border: round $primary;
+        margin: 0 1 1 1;
+    }
     #message-list {
         height: 1fr;
         overflow-y: auto;
-        padding: 1 2;
+        padding: 0 1 1 1;
     }
     #thinking-indicator {
         height: auto;
@@ -62,6 +68,8 @@ class ChatScreen(Screen):
         )
         self._engine = QueryEngine(self.config, self._session)
 
+        self._mount_welcome()
+
         # Restore existing messages from a resumed session
         msg_list = self.query_one("#message-list", VerticalScroll)
         for msg in self._session.messages:
@@ -76,9 +84,11 @@ class ChatScreen(Screen):
     # ── compose ──────────────────────────────────────────────────
 
     def compose(self):
-        yield VerticalScroll(id="message-list")
-        yield Static("", id="thinking-indicator")
-        yield InputArea()
+        with Container(id="chat-shell"):
+            yield Static("", id="welcome-slot")
+            yield VerticalScroll(id="message-list")
+            yield Static("", id="thinking-indicator")
+            yield InputArea()
         yield StatusBar()
 
     # ── message handling ─────────────────────────────────────────
@@ -87,6 +97,9 @@ class ChatScreen(Screen):
         """Handle user submitting a message."""
         if self._streaming_task and not self._streaming_task.done():
             return  # Already processing
+
+        # Hide welcome panel on first message
+        self._hide_welcome()
 
         user_text = event.text
         self._add_message("user", user_text)
@@ -173,6 +186,24 @@ class ChatScreen(Screen):
         return "\n".join(lines)
 
     # ── message rendering helpers ────────────────────────────────
+
+    def _mount_welcome(self) -> None:
+        """Render the startup panel with model/session/workspace details."""
+        if not self._engine:
+            return
+        slot = self.query_one("#welcome-slot", Static)
+        slot.update(
+            WelcomePanel(
+                model=self._engine.provider.resolve_model(self.model_override),
+                session_id=self._engine.session_id,
+                workspace=self._engine.workspace_root,
+            ).render()
+        )
+
+    def _hide_welcome(self) -> None:
+        """Clear the welcome panel after first interaction."""
+        slot = self.query_one("#welcome-slot", Static)
+        slot.update("")
 
     def _add_message(self, role: str, content: str) -> MessageWidget:
         """Add a message widget to the message list."""

@@ -101,6 +101,31 @@ def _doctor_rich(cfg: Config, verbose: bool) -> None:
     except Exception:
         console.print("  [dim]Tools not available (install roxy with all dependencies)[/dim]")
 
+    # ── Runtime ──────────────────────────────────────────────────
+    console.print()
+    console.print("[bold]Runtime:[/bold]")
+    from roxy.config.paths import roxy_home, knowledge_db, sessions_dir
+    console.print(f"  Home:      {roxy_home()}")
+    console.print(f"  Config:    {cfg._path}{' [green]✓[/green]' if cfg._path.exists() else ' [yellow]![/yellow]'}")
+
+    # KB status
+    try:
+        from roxy.knowledge.store import KnowledgeStore
+        ks = KnowledgeStore()
+        ks.init_db()
+        stats = ks.get_stats()
+        console.print(f"  Knowledge: {stats['entry_count']} entries, {stats['tag_count']} tags "
+                      f"({knowledge_db()})")
+    except Exception:
+        console.print(f"  Knowledge: [dim]unavailable[/dim]")
+
+    # Sessions count
+    try:
+        session_files = list(sessions_dir().glob("*.json"))
+        console.print(f"  Sessions:  {len(session_files)} saved ({sessions_dir()})")
+    except Exception:
+        console.print(f"  Sessions:  [dim]unavailable[/dim]")
+
     # ── Research Channels ─────────────────────────────────────────
     console.print()
     console.print("[bold]Research Channels:[/bold]")
@@ -161,9 +186,47 @@ def _doctor_json(cfg: Config, verbose: bool) -> None:
     except Exception:
         pass
 
+    # Runtime info
+    from roxy.config.paths import roxy_home, knowledge_db, sessions_dir
+
+    kb_stats = {}
+    try:
+        from roxy.knowledge.store import KnowledgeStore
+        ks = KnowledgeStore()
+        ks.init_db()
+        kb_stats = ks.get_stats()
+    except Exception:
+        pass
+
+    sessions_count = 0
+    try:
+        sessions_count = len(list(sessions_dir().glob("*.json")))
+    except Exception:
+        pass
+
+    # Channel summary
+    channels_info: list[dict] = []
+    try:
+        from roxy.research.channels import ALL_CHANNELS
+        for ch in ALL_CHANNELS:
+            channels_info.append({
+                "name": ch.name,
+                "description": ch.description,
+                "tier": ch.tier,
+            })
+    except Exception:
+        pass
+
     report = {
         "config_path": str(cfg._path),
         "config_exists": cfg._path.exists(),
+        "runtime": {
+            "home": str(roxy_home()),
+            "knowledge_db": str(knowledge_db()),
+            "sessions_dir": str(sessions_dir()),
+            "sessions_count": sessions_count,
+        },
+        "knowledge": kb_stats,
         "user": {
             "name": cfg.get("user.name"),
             "identity": cfg.get("user.identity"),
@@ -173,5 +236,6 @@ def _doctor_json(cfg: Config, verbose: bool) -> None:
         "default_model": cfg.get("models.default"),
         "providers": {k: v for k, v in results.items()},
         "tools": tools_info,
+        "channels": channels_info,
     }
-    click.echo(json.dumps(report, indent=2, ensure_ascii=False))
+    click.echo(json.dumps(report, indent=2, ensure_ascii=False, default=str))

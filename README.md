@@ -185,6 +185,18 @@ python -m roxy doctor --json
 bash scripts/demo.sh             # End-to-end smoke test
 ```
 
+## Roadmap
+
+| Version | Theme | Highlights |
+|---------|-------|------------|
+| **v0.1** (current) | Core MVP | TUI chat, 3 tools, RSS/WeChat channels, KB + FTS5, compaction, safety gates |
+| **v0.2** | Productized MVP | TUI welcome + mascot, doctor KB/sessions, slash commands, session management |
+| **v0.3** | Research Workbench | Source last_run/last_error, digest grouping, OKF import/export, FTS fallback |
+| **v0.4** | External Capability | Agent-Reach adapter, ArXiv/PubMed channels, webhook notifications, provider routing |
+| **v0.5** | Controlled Evolution | Trace store, eval generation, prompt optimizer, human-reviewed diffs |
+
+See [docs/FORMAL_VERSION_PLAN.md](docs/FORMAL_VERSION_PLAN.md) for detailed requirements and acceptance criteria.
+
 ## License
 
 MIT
