@@ -3,9 +3,23 @@
 </h1>
 
 <p align="center">
+  <strong>Roxy Agent ✦</strong>
+  <br>
+  <a href="https://github.com/IBN-Spring/Roxy">Roxy Agent</a>
+  ·
+  <a href="docs/FORMAL_VERSION_PLAN.md">Documentation</a>
+  ·
+  <a href="https://github.com/IBN-Spring/Roxy/blob/main/LICENSE">License: MIT</a>
+  ·
+  Built by <a href="https://github.com/IBN-Spring">IBN-Spring</a>
+  ·
+  <b>中文</b> | <a href="README_en.md">English</a>
+</p>
+
+<p align="center">
   <strong>TUI-first vertical research agent with OKF knowledge and controlled evolution.</strong>
   <br>
-  <sub>持续监控信息源，沉淀结构化知识，并用评估闭环让 Agent 可验证地变好。</sub>
+  <sub>持续监控信息源，沉淀结构化知识，并用评估闭环让 Agent 可验证地进化。</sub>
 </p>
 
 <p align="center">
@@ -13,10 +27,6 @@
   <a href="#"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="#"><img src="https://img.shields.io/badge/version-0.6.0-green.svg" alt="Version 0.6.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/tests-238%20passed-brightgreen.svg" alt="238 Tests"></a>
-</p>
-
-<p align="center">
-  <b>中文</b> | <a href="README_en.md">English</a>
 </p>
 
 ---

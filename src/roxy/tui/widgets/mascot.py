@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from textual.widget import Widget
+from textual.widgets import Static
 from textual import work
-from rich.text import Text
 
 # ASCII art frames
 IDLE_FRAME_0 = r"""
@@ -91,7 +90,7 @@ MAGIC_FRAMES = [
 ]
 
 
-class MascotWidget(Widget):
+class MascotWidget(Static):
     """Animated Roxy mascot that responds to agent state.
 
     States: idle, thinking, typing, magic, hop.
@@ -147,8 +146,9 @@ class MascotWidget(Widget):
             self._timer.cancel()
         frames = self.FRAMES.get(state, [IDLE_FRAME_0])
         self._frame_index = 0
+        self._current = frames[0] if frames else ""
         if frames:
-            self.update(frames[0])
+            self.refresh()
         if len(frames) > 1:
             self._timer = self.set_interval(interval, self._next_frame)
 
@@ -157,7 +157,8 @@ class MascotWidget(Widget):
         if not frames:
             return
         self._frame_index = (self._frame_index + 1) % len(frames)
-        self.update(frames[self._frame_index])
+        self._current = frames[self._frame_index]
+        self.refresh()
 
-    def render(self) -> Text:
-        return Text("")  # updated via self.update()
+    def render(self):
+        return self._current if hasattr(self, '_current') else ""
