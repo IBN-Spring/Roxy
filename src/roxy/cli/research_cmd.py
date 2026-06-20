@@ -222,13 +222,15 @@ def _print_feed_summary(sm) -> None:
 @click.option("--channel", "-c", default="rss", help="Channel to collect from (default: rss).")
 @click.option("--url", "-u", default="", help="Feed URL or search URL for the channel.")
 @click.option("--all", "collect_all", is_flag=True, help="Collect from ALL configured feeds.")
-@click.option("--topic", "-t", default="", help="Topic filter.")
+@click.option("--topics", "collect_topics_flag", is_flag=True, help="Collect from ALL saved research topics.")
+@click.option("--topic", "-t", default="", help="Topic search query.")
 @click.option("--since", default=None, help="ISO 8601 date — only items after this.")
 @click.option("--max-items", default=50, help="Max items per feed.")
 def research_collect(
     channel: str,
     url: str,
     collect_all: bool,
+    collect_topics_flag: bool,
     topic: str,
     since: str | None,
     max_items: int,
@@ -239,24 +241,40 @@ def research_collect(
     Examples:
       roxy research collect --channel rss --url "https://example.com/feed.xml"
       roxy research collect --all
+      roxy research collect --topics
     """
+    import asyncio
     from roxy.config.loader import Config
     from roxy.research.collector import ContentCollector
     from roxy.research.source_manager import SourceManager
 
-    cfg = Config()
-    cfg.load()
+    cfg = Config(); cfg.load()
+    collector = ContentCollector(cfg)
 
     async def _collect_one(ch: str, u: str, fn: str = "") -> dict:
-        collector = ContentCollector(cfg)
-        return await collector.collect(
-            channel_name=ch,
-            feed_url=u,
-            topic=topic,
-            since=since,
-            max_items=max_items,
-            feed_name=fn,
-        )
+        return await collector.collect(channel_name=ch, feed_url=u, topic=topic, since=since, max_items=max_items, feed_name=fn)
+
+    # --topics
+    if collect_topics_flag:
+        from roxy.research.topic_manager import TopicManager
+        tm = TopicManager(cfg)
+        topics = tm.list_topics(enabled_only=True)
+        if not topics:
+            console.print("[yellow]No saved topics.[/yellow]")
+            console.print("Add: [cyan]roxy research topics add \"name\" --channels arxiv[/cyan]")
+            return
+
+        console.print(f"[dim]Collecting [cyan]{len(topics)}[/cyan] topic(s)...[/dim]")
+        run = asyncio.run(collector.collect_topics(topics, max_items=max_items))
+
+        for r in run["results"]:
+            icon = "✓" if "error" not in r else "✗"
+            console.print(f"  {icon} [cyan]{r['topic']}[/cyan] → {r['channel']}: {r['items_new']} new, {r['items_duplicate']} dup")
+        console.print()
+        console.print(f"[bold green]Done.[/bold green] Run: [cyan]{run['run_id'][:8]}[/cyan] — {run['total_new']} new entries")
+        console.print(f"View: /digest  |  /kb \"<keyword>\"")
+        console.print()
+        return
 
     if collect_all:
         sm = SourceManager(cfg)
@@ -313,6 +331,80 @@ def research_collect(
     console.print(f"  New entries:      [green]{result['items_new']}[/green]")
     console.print(f"  Duplicates:       [yellow]{result['items_duplicate']}[/yellow]")
     console.print()
+
+
+# ── topics ──────────────────────────────────────────────────────
+
+@research_cmd.group("topics")
+def research_topics() -> None:
+    """Manage saved research topics.
+
+    \b
+    Examples:
+      roxy research topics add "single cell" --channels arxiv,pubmed
+      roxy research topics list
+    """
+    pass
+
+
+@research_topics.command("add")
+@click.argument("name")
+@click.option("--query", "-q", default="", help="Search query (defaults to name).")
+@click.option("--channels", "-c", default="arxiv", help="Comma-separated channel names.")
+def topics_add(name: str, query: str, channels: str) -> None:
+    """Save a research topic for repeated queries."""
+    from roxy.config.loader import Config
+    from roxy.research.topic_manager import TopicManager
+
+    cfg = Config(); cfg.load()
+    tm = TopicManager(cfg)
+    ch_list = [c.strip() for c in channels.split(",") if c.strip()]
+    try:
+        topic = tm.add_topic(name, query=query or name, channels=ch_list)
+        console.print(f"[green]✓[/green] Added topic: [cyan]{topic.name}[/cyan] (query: {topic.query}, channels: {','.join(topic.channels)})")
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+
+
+@research_topics.command("list")
+def topics_list() -> None:
+    """List saved research topics."""
+    from roxy.config.loader import Config
+    from roxy.research.topic_manager import TopicManager
+    from rich.table import Table
+
+    cfg = Config(); cfg.load()
+    tm = TopicManager(cfg)
+    topics = tm.list_topics()
+    if not topics:
+        console.print("[yellow]No saved topics.[/yellow]")
+        console.print("Add: [cyan]roxy research topics add \"name\" --channels arxiv[/cyan]")
+        return
+
+    table = Table(title="Research Topics")
+    table.add_column("Name", style="cyan")
+    table.add_column("Query")
+    table.add_column("Channels")
+    table.add_column("Status")
+    table.add_column("Collected", justify="right")
+    for t in topics:
+        status = "[green]on[/green]" if t.enabled else "[dim]off[/dim]"
+        table.add_row(t.name, t.query, ",".join(t.channels), status, str(t.total_collected))
+    console.print(table)
+
+
+@research_topics.command("remove")
+@click.argument("name")
+def topics_remove(name: str) -> None:
+    """Remove a saved topic."""
+    from roxy.config.loader import Config
+    from roxy.research.topic_manager import TopicManager
+    cfg = Config(); cfg.load()
+    tm = TopicManager(cfg)
+    if tm.remove_topic(name):
+        console.print(f"[green]✓[/green] Removed: [cyan]{name}[/cyan]")
+    else:
+        console.print(f"[yellow]Topic not found: '{name}'[/yellow]")
 
 
 # ── channels ────────────────────────────────────────────────────

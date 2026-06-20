@@ -146,6 +146,78 @@ class ContentCollector:
 
     # ── helpers ──────────────────────────────────────────────────
 
+    async def collect_topics(self, topics: list, max_items: int = 50) -> dict:
+        """Collect from a list of ResearchTopic objects across configured channels.
+
+        Returns {run_id, topics_processed, total_new, total_dup, errors, results}.
+        """
+        run_id = self.new_run_id()
+        started_at = datetime.now(timezone.utc).isoformat()
+        results = []
+        total_new = 0
+        total_dup = 0
+        errors = []
+
+        for topic in topics:
+            for channel_name in topic.channels:
+                try:
+                    result = await self.collect(
+                        channel_name=channel_name,
+                        topic=topic.query,
+                        run_id=run_id,
+                        max_items=max_items,
+                    )
+                    results.append({
+                        "topic": topic.name, "channel": channel_name,
+                        "items_found": result["items_found"],
+                        "items_new": result["items_new"],
+                        "items_duplicate": result["items_duplicate"],
+                    })
+                    total_new += result["items_new"]
+                    total_dup += result["items_duplicate"]
+                    if result.get("errors"):
+                        errors.extend(result["errors"])
+                except Exception as exc:
+                    results.append({
+                        "topic": topic.name, "channel": channel_name,
+                        "items_found": 0, "items_new": 0, "items_duplicate": 0,
+                        "error": str(exc),
+                    })
+                    errors.append(f"{topic.name}/{channel_name}: {exc}")
+
+            # Track topic state
+            topic_errors = [e for e in errors if topic.name in e]
+            if topic_errors:
+                self._record_topic_error(topic.name, topic_errors[0])
+            else:
+                topic_new = sum(r["items_new"] for r in results if r["topic"] == topic.name)
+                self._record_topic_success(topic.name, topic_new)
+
+        return {
+            "run_id": run_id, "started_at": started_at,
+            "topics_processed": len(topics),
+            "total_new": total_new, "total_dup": total_dup,
+            "errors": errors, "results": results,
+        }
+
+    def _record_topic_success(self, topic_name: str, new_count: int) -> None:
+        if not topic_name:
+            return
+        try:
+            from roxy.research.topic_manager import TopicManager
+            TopicManager(self.config).record_success(topic_name, new_count)
+        except Exception as exc:
+            logger.warning(f"Failed to record topic success: {exc}")
+
+    def _record_topic_error(self, topic_name: str, error_msg: str) -> None:
+        if not topic_name:
+            return
+        try:
+            from roxy.research.topic_manager import TopicManager
+            TopicManager(self.config).record_error(topic_name, error_msg)
+        except Exception as exc:
+            logger.warning(f"Failed to record topic error: {exc}")
+
     async def _run_collect(self, channel, feed_url, topic, since, max_items):
         try:
             return await channel.collect(self.config, topic=topic, since=since,

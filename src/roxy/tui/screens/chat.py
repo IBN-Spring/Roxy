@@ -53,8 +53,10 @@ HELP_TEXT = """\
 
 [b]Research Commands[/b]
 
+  /topics            Show saved research topics
   /feeds             Show feed source status
   /collect           Collect from all enabled feeds
+  /collect topics    Collect from all saved topics
   /runs              Show recent collection runs
   /digest            Generate 7-day digest summary
   /digest 30         30-day digest
@@ -179,6 +181,7 @@ class ChatScreen(Screen):
             "/resume": lambda a: self._cmd_resume(a),
             "/exit": self._cmd_exit,
             "/status": self._cmd_status,
+            "/topics": self._cmd_topics,
             "/feeds": self._cmd_feeds,
             "/collect": self._cmd_collect,
             "/runs": self._cmd_runs,
@@ -371,6 +374,26 @@ class ChatScreen(Screen):
 
     # ── research commands ───────────────────────────────────────
 
+    def _cmd_topics(self, _arg: str) -> str:
+        """Show saved research topics."""
+        try:
+            from roxy.research.topic_manager import TopicManager
+            tm = TopicManager(self.config)
+            topics = tm.list_topics()
+            if not topics:
+                return "[dim]No saved topics. Add: roxy research topics add \"name\" --channels arxiv[/dim]"
+
+            lines = [f"[b]Research Topics[/b] ({len(topics)} saved)", ""]
+            for t in topics:
+                icon = "[green]✓[/green]" if t.enabled else "[dim]○[/dim]"
+                err = f" [red]⚠[/red]" if t.last_error else ""
+                lines.append(f"  {icon} [cyan]{t.name}[/cyan] → {','.join(t.channels)} | collected: {t.total_collected}{err}")
+            lines.append("")
+            lines.append("Collect all: /collect topics  |  roxy research collect --topics")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"[red]{exc}[/red]"
+
     def _cmd_feeds(self, _arg: str) -> str:
         """Show feed source status."""
         try:
@@ -415,9 +438,34 @@ class ChatScreen(Screen):
         except Exception as exc:
             return f"[red]Error loading feeds: {exc}[/red]"
 
-    def _cmd_collect(self, _arg: str) -> str:
-        """Collect from all enabled feeds."""
+    def _cmd_collect(self, arg: str) -> str:
+        """Collect from feeds or topics."""
         import asyncio as _asyncio
+        arg = arg.strip()
+
+        # /collect topics
+        if arg.lower() == "topics":
+            try:
+                from roxy.research.topic_manager import TopicManager
+                from roxy.research.collector import ContentCollector
+                tm = TopicManager(self.config)
+                topics = tm.list_topics(enabled_only=True)
+                if not topics:
+                    return "[yellow]No saved topics. Add: roxy research topics add \"name\" --channels arxiv[/yellow]"
+
+                collector = ContentCollector(self.config)
+                run = _asyncio.run(collector.collect_topics(topics))
+                lines = [f"[b]Topic Collection Complete[/b]", f"  Run: [cyan]{run['run_id'][:8]}[/cyan] — {run['total_new']} new", ""]
+                for r in run["results"]:
+                    icon = "✓" if "error" not in r else "✗"
+                    lines.append(f"  {icon} [cyan]{r['topic']}[/cyan] → {r['channel']}: {r['items_new']} new")
+                lines.append("")
+                lines.append("View: /digest  |  /kb <keyword>")
+                return "\n".join(lines)
+            except Exception as exc:
+                return f"[red]Topic collection failed: {exc}[/red]"
+
+        # /collect (feeds)
         try:
             from roxy.research.source_manager import SourceManager
             from roxy.research.collector import ContentCollector
