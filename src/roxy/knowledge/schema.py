@@ -191,7 +191,7 @@ class KnowledgeEntry:
             "tags": self.tags,
             "topics": self.topics,
             "source": {
-                "type": self.source_type,
+                "type": self.source_type or "import",
                 "feed_url": self.source_feed_url,
                 "channel_name": self.source_channel,
             },

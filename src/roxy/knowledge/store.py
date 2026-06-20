@@ -238,6 +238,75 @@ class KnowledgeStore:
                 count += 1
         return count
 
+    def import_jsonl(self, path: Path, validate: bool = True) -> dict[str, int]:
+        """Import entries from an OKF JSONL file.
+
+        Args:
+            path: Path to the JSONL file.
+            validate: If True, validate each entry against OKF schema before import.
+
+        Returns:
+            {imported, skipped, errors} counts.
+        """
+        if validate:
+            from roxy.knowledge.okf_validator import validate_entry
+
+        counts = {"imported": 0, "skipped": 0, "errors": 0}
+
+        if not path.exists():
+            logger.warning(f"Import file not found: {path}")
+            return counts
+
+        with open(path, "r", encoding="utf-8") as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    logger.warning(f"Line {line_num}: invalid JSON — {exc}")
+                    counts["errors"] += 1
+                    continue
+
+                # Validate
+                if validate:
+                    errs = validate_entry(data)
+                    if errs:
+                        logger.warning(f"Line {line_num}: validation failed — {errs}")
+                        counts["errors"] += 1
+                        continue
+
+                # Build entry
+                entry = KnowledgeEntry(
+                    id=data.get("id", ""),
+                    okf_type=data.get("type", "item"),
+                    title=data.get("title", ""),
+                    canonical_url=data.get("canonical_url", ""),
+                    content_md=data.get("content_md", ""),
+                    content_plain=data.get("content_plain", ""),
+                    summary=data.get("summary", ""),
+                    authors=data.get("authors", []),
+                    published_at=data.get("published_at", ""),
+                    collected_at=data.get("collected_at", ""),
+                    collected_via=data.get("collected_via", "import"),
+                    language=data.get("language", "zh-CN"),
+                    source_type=data.get("source", {}).get("type", ""),
+                    source_feed_url=data.get("source", {}).get("feed_url", ""),
+                    source_channel=data.get("source", {}).get("channel_name", ""),
+                    tags=data.get("tags", []),
+                    topics=data.get("topics", []),
+                )
+
+                is_new, _ = self.insert_entry(entry)
+                if is_new:
+                    counts["imported"] += 1
+                else:
+                    counts["skipped"] += 1
+
+        return counts
+
     # ── helpers ──────────────────────────────────────────────────
 
     def _get_tags(self, entry_id: str) -> list[str]:
