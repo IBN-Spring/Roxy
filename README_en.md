@@ -25,7 +25,7 @@
 <p align="center">
   <a href="https://github.com/IBN-Spring/Roxy-Agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
-  <a href="#"><img src="https://img.shields.io/badge/version-1.0.0-green.svg" alt="Version 1.0.0"></a>
+  <a href="#"><img src="https://img.shields.io/badge/version-1.0.1-green.svg" alt="Version 1.0.1"></a>
   <a href="#"><img src="https://img.shields.io/badge/tests-308%20passed-brightgreen.svg" alt="308 Tests"></a>
 </p>
 
