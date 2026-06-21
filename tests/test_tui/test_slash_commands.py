@@ -134,4 +134,4 @@ class TestSlashCommands:
     def test_status(self, screen: ChatScreen):
         self._setup_engine(screen)
         result = screen._handle_slash("/status")
-        assert "Model" in result or "status" in result.lower()
+        assert "Dashboard" in result or "model" in result.lower()

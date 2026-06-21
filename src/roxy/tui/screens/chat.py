@@ -678,8 +678,102 @@ class ChatScreen(Screen):
             return f"[red]KB search failed: {exc}[/red]"
 
     def _cmd_status(self, _arg: str) -> str:
-        """Unified status overview."""
-        lines = ["[b]Roxy Status[/b]", ""]
+        """Dashboard-style status overview."""
+        lines = ["[b]Roxy Dashboard[/b]", ""]
+        sep = "  "
+
+        # Agent
+        model = "—"
+        if self._engine:
+            model = self._engine.provider.resolve_model(self.model_override)
+        has_key = True
+        try:
+            if self._engine:
+                has_key = self._engine.provider.has_api_key(model)
+        except Exception:
+            pass
+        key_s = "key: ok" if has_key else "key: MISSING"
+        key_style = "green" if has_key else "yellow"
+        model_short = model.split("/")[-1] if "/" in model else model
+        lines.append(f"{key_s}  model: {model_short}  session: {self._engine.session_id[:8] if self._engine else '—'}")
+
+        # Knowledge
+        kb_s = "—"
+        try:
+            from roxy.knowledge.store import KnowledgeStore
+            ks = KnowledgeStore(); ks.init_db()
+            stats = ks.get_stats()
+            kb_s = f"{stats['entry_count']} entries, {stats['tag_count']} tags"
+        except Exception:
+            pass
+        lines.append(f"KB: {kb_s}")
+
+        # Feeds
+        try:
+            from roxy.research.source_manager import SourceManager
+            sm = SourceManager(self.config)
+            s = sm.get_status_summary()
+            err_s = f", {s['with_errors']} ERR" if s['with_errors'] else ""
+            lines.append(f"Feeds: {s['enabled']} on, {s['disabled']} off{err_s}")
+        except Exception:
+            lines.append("Feeds: —")
+
+        # Channels
+        try:
+            from roxy.research.channels import ALL_CHANNELS
+            import asyncio as _asyncio
+            ch_parts = []
+            for ch in ALL_CHANNELS:
+                try:
+                    st, _ = _asyncio.run(ch.check(self.config))
+                except Exception:
+                    st = "error"
+                icon = "ok" if st == "ok" else ("warn" if st == "warn" else "off")
+                ch_parts.append(f"{icon}:{ch.name}")
+            lines.append(f"Channels: {', '.join(ch_parts)}")
+        except Exception:
+            lines.append("Channels: —")
+
+        # Evolution
+        evo_s = "no proposals"
+        try:
+            from roxy.evolution.planner import EvolutionPlanner
+            proposals = EvolutionPlanner().list_proposals()
+            if proposals:
+                drafts = sum(1 for p in proposals if p.status == "draft")
+                active = sum(1 for p in proposals if p.status in ("patched", "tested"))
+                merged = sum(1 for p in proposals if p.status == "merged")
+                evo_s = f"{len(proposals)} proposals, {drafts} draft, {active} active, {merged} merged"
+        except Exception:
+            pass
+        lines.append(f"Evolution: {evo_s}")
+
+        # Last Run
+        try:
+            from roxy.research.run_history import RunHistory
+            rh = RunHistory()
+            last = rh.latest_run()
+            if last:
+                started = last["started_at"][:16] if last["started_at"] else "—"
+                lines.append(f"Last Run: {last['run_id'][:8]} {started}  {last['feed_count']} feeds, {last['total_new']} new")
+            else:
+                lines.append("Last Run: none")
+        except Exception:
+            pass
+
+        # Workspace
+        if self._engine:
+            try:
+                lines.append(f"Workspace: {self._engine.workspace_root}")
+            except Exception:
+                pass
+
+        lines.append("")
+        lines.append("/evolve  /help  /kb")
+        return "\n".join(lines)
+
+    def OLD_STATUS_REMOVED_V1(self, _arg: str) -> str:
+        return ""
 
         # Model
         if self._engine:
@@ -1023,9 +1117,9 @@ class ChatScreen(Screen):
             lines.append(f"  Report: [dim]{p.report_path}[/dim]")
         lines.append("")
         if p.status == "draft":
-            lines.append("Next: [cyan]roxy evolve patch prepare {p.id[:20]}[/cyan]")
+            lines.append(f"Next: [cyan]roxy evolve patch prepare {p.id[:20]}[/cyan]")
         if p.status == "patched":
-            lines.append("Next: [cyan]roxy evolve test {p.id[:20]}[/cyan]")
+            lines.append(f"Next: [cyan]roxy evolve test {p.id[:20]}[/cyan]")
         if p.patch_status == "applied" and p.test_status == "passed":
-            lines.append("Next: [cyan]roxy evolve review {p.id[:20]}[/cyan]")
+            lines.append(f"Next: [cyan]roxy evolve review {p.id[:20]}[/cyan]")
         return "\n".join(lines)

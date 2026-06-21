@@ -57,15 +57,21 @@ class WelcomePanel(Widget):
         status.add_column()
 
         model_short = self.model.split("/")[-1] if "/" in self.model else (self.model or "—")
-        key_icon = "[green]●[/green]" if self.has_api_key else "[yellow]○[/yellow]"
         kb_str = f"{self.kb_entries} entries" if self.kb_entries else "empty"
         ch_str = f"{self.channels_count} channels" if self.channels_count else "—"
 
+        key_text = Text()
+        if self.has_api_key:
+            key_text.append("key: ok", style="green")
+        else:
+            key_text.append("key: missing", style="yellow")
+        key_text.append(f"  model: {model_short}" if model_short else "", style="dim")
+
         status.add_row(
-            Text(f"{key_icon} Model: {model_short}", style=""),
-            Text(f"Session: {self.session_id[:8]}", style="dim"),
+            key_text,
+            Text(f"session: {self.session_id[:8]}", style="dim"),
             Text(f"KB: {kb_str}", style="dim"),
-            Text(f"Channels: {ch_str}", style="dim"),
+            Text(f"ch: {ch_str}", style="dim"),
         )
 
         # ── Tips ─────────────────────────────────────────────
@@ -82,11 +88,9 @@ class WelcomePanel(Widget):
         if not self.has_api_key:
             provider = self.model.split("/")[0] if "/" in self.model else "openai"
             warning.append("\n", style="")
-            warning.append("╔══════════════════════════╗\n", style="yellow")
-            warning.append("║  No API key configured  ║\n", style="bold yellow")
-            warning.append("╚══════════════════════════╝\n", style="yellow")
-            warning.append(f"Configure: roxy config set models.providers.{provider}.api_key \"<key>\"\n", style="cyan")
-            warning.append(f"Or: export {provider.upper()}_API_KEY=\"<key>\"\n", style="cyan")
+            warning.append("NO API KEY CONFIGURED", style="bold yellow")
+            warning.append(f"\nroxy config set models.providers.{provider}.api_key \"<key>\"", style="cyan")
+            warning.append(f"\nor: export {provider.upper()}_API_KEY=\"<key>\"", style="cyan")
 
         # ── Assembly ─────────────────────────────────────────
         content = Table.grid(padding=(1, 0))
