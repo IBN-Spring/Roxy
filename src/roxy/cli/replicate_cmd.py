@@ -91,6 +91,15 @@ def deploy_plan(bundle_path: str, target: str) -> None:
     from roxy.replication.replicate import Replicator
 
     replicator = Replicator()
+    # First validate
+    validation = replicator.validate_bundle(Path(bundle_path))
+    if not validation["valid"]:
+        console.print(f"[red]✗[/red] Bundle is invalid — cannot generate deploy plan.")
+        for err in validation["errors"]:
+            console.print(f"  [red]{err}[/red]")
+        console.print(f"\nFix: re-export with `roxy replicate export --out {bundle_path}`")
+        raise SystemExit(1)
+
     plan = replicator.generate_deploy_plan(Path(bundle_path), target)
 
     console.print()

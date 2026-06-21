@@ -1,7 +1,6 @@
-"""Replicate — export portable Roxy runtime bundles.
+"""Replicate — export portable Roxy runtime bundles (v0.9.1).
 
-v0.9: generates self-contained bundles for deployment/replication.
-Never includes API keys, tokens, or raw secrets.
+Security-hardened: no secrets, zip-slip detection, parameterized deploy plans.
 """
 
 from __future__ import annotations
@@ -9,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import subprocess
 import tempfile
 import zipfile
@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 from roxy import __version__
-from roxy.config.paths import roxy_home
 
 
 def _git_commit() -> str:
@@ -35,6 +34,24 @@ def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _is_safe_path(name: str) -> bool:
+    """Reject zip-slip paths: absolute, .. traversal, backslash on any platform."""
+    if name.startswith("/") or name.startswith("\\"):
+        return False
+    if ".." in name:
+        return False
+    if "\\" in name:
+        return False
+    return True
+
+
+def _sanitize_path(path_str: str) -> str:
+    """Strip shell metacharacters for safe display. Returns cleaned string."""
+    dangerous = set(";&|`$(){}[]<>\"'")
+    cleaned = "".join(c for c in path_str if c not in dangerous)
+    return cleaned.strip()
+
+
 class Replicator:
     """Exports a portable, verifiable Roxy runtime bundle."""
 
@@ -44,60 +61,37 @@ class Replicator:
     def export_bundle(self, output_path: Path, include_kb: bool = True) -> dict:
         """Create a replicable bundle at output_path. Returns manifest dict."""
         now = datetime.now(timezone.utc).isoformat()
-
         manifest = {
             "roxy_version": __version__,
             "git_commit": _git_commit(),
             "exported_at": now,
             "contents": {},
         }
-
         with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            # 1. Source code (git archive)
             src_data = self._archive_source()
             zf.writestr("roxy-src.zip", src_data)
-            manifest["contents"]["source"] = {
-                "file": "roxy-src.zip",
-                "sha256": _sha256_hex(src_data),
-            }
+            manifest["contents"]["source"] = {"file": "roxy-src.zip", "sha256": _sha256_hex(src_data)}
 
-            # 2. OKF knowledge base
             if include_kb:
                 kb_data = self._export_kb()
                 if kb_data:
                     zf.writestr("kb.jsonl", kb_data)
-                    manifest["contents"]["knowledge"] = {
-                        "file": "kb.jsonl",
-                        "sha256": _sha256_hex(kb_data),
-                    }
+                    manifest["contents"]["knowledge"] = {"file": "kb.jsonl", "sha256": _sha256_hex(kb_data)}
 
-            # 3. Eval seeds
             seeds_data = self._export_seeds()
             if seeds_data:
                 zf.writestr("eval_seeds.jsonl", seeds_data)
-                manifest["contents"]["eval_seeds"] = {
-                    "file": "eval_seeds.jsonl",
-                    "sha256": _sha256_hex(seeds_data),
-                }
+                manifest["contents"]["eval_seeds"] = {"file": "eval_seeds.jsonl", "sha256": _sha256_hex(seeds_data)}
 
-            # 4. Config template (sanitized)
             config_data = self._export_config_template()
             zf.writestr("config.template.yaml", config_data)
-            manifest["contents"]["config_template"] = {
-                "file": "config.template.yaml",
-                "sha256": _sha256_hex(config_data),
-            }
+            manifest["contents"]["config_template"] = {"file": "config.template.yaml", "sha256": _sha256_hex(config_data)}
 
-            # 5. Skills
             skills_data = self._export_skills()
             if skills_data:
                 zf.writestr("skills.zip", skills_data)
-                manifest["contents"]["skills"] = {
-                    "file": "skills.zip",
-                    "sha256": _sha256_hex(skills_data),
-                }
+                manifest["contents"]["skills"] = {"file": "skills.zip", "sha256": _sha256_hex(skills_data)}
 
-            # 6. Manifest itself
             manifest_bytes = json.dumps(manifest, indent=2, ensure_ascii=False).encode("utf-8")
             zf.writestr("manifest.json", manifest_bytes)
 
@@ -115,16 +109,24 @@ class Replicator:
             with zipfile.ZipFile(bundle_path, "r") as zf:
                 names = zf.namelist()
 
-                # Check manifest
+                # v0.9.1: reject unsafe paths
+                for name in names:
+                    if not _is_safe_path(name):
+                        errors.append(f"Unsafe path in bundle: '{name}'")
+                if errors:
+                    return {"valid": False, "errors": errors, "manifest": {}}
+
                 if "manifest.json" not in names:
                     errors.append("Missing manifest.json")
                     return {"valid": False, "errors": errors, "manifest": {}}
 
                 manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
 
-                # Validate each content entry
+                # Validate declared files
+                declared = set()
                 for key, info in manifest.get("contents", {}).items():
                     filename = info.get("file", "")
+                    declared.add(filename)
                     expected_hash = info.get("sha256", "")
                     if filename not in names:
                         errors.append(f"Missing file: {filename}")
@@ -133,7 +135,12 @@ class Replicator:
                     if actual != expected_hash:
                         errors.append(f"Hash mismatch for {filename}: expected {expected_hash[:8]}, got {actual[:8]}")
 
-                # Validate OKF if present
+                # v0.9.1: reject undeclared files
+                known = declared | {"manifest.json"}
+                for name in names:
+                    if name not in known:
+                        errors.append(f"Undeclared file in bundle: '{name}'")
+
                 if "kb.jsonl" in names:
                     okf_errors = self._validate_okf_inline(zf.read("kb.jsonl").decode("utf-8"))
                     if okf_errors:
@@ -147,56 +154,86 @@ class Replicator:
         return {"valid": len(errors) == 0, "errors": errors, "manifest": manifest}
 
     def generate_deploy_plan(self, bundle_path: Path, target_dir: str) -> str:
-        """Generate a human-readable deployment plan (dry-run only)."""
+        """Generate a human-readable deployment plan (dry-run only).
+
+        v0.9.1: returns error block if bundle invalid; sanitizes paths.
+        """
+        safe_target = _sanitize_path(target_dir)
+        safe_bundle = _sanitize_path(str(bundle_path))
+
         validation = self.validate_bundle(bundle_path)
         manifest = validation.get("manifest", {})
+
+        if not validation["valid"]:
+            lines = [
+                "# Roxy Deployment Plan — BLOCKED",
+                "",
+                f"**Bundle**: {safe_bundle}",
+                f"**Valid**: [red]✗[/red]",
+                "",
+                "## Validation Errors",
+                "",
+            ]
+            for err in validation["errors"]:
+                lines.append(f"- [red]✗[/red] {err}")
+            lines.append("")
+            lines.append("**Fix the bundle before deploying.**")
+            lines.append(f"Re-export: `roxy replicate export --out {safe_bundle}`")
+            return "\n".join(lines)
 
         lines = [
             "# Roxy Deployment Plan",
             "",
-            f"**Bundle**: {bundle_path}",
+            f"**Bundle**: {safe_bundle}",
             f"**Version**: {manifest.get('roxy_version', 'unknown')}",
             f"**Commit**: {manifest.get('git_commit', 'unknown')}",
             f"**Exported**: {manifest.get('exported_at', 'unknown')[:19]}",
-            f"**Valid**: {'[green]✓[/green]' if validation['valid'] else '[red]✗[/red]'}",
+            f"**Valid**: [green]✓[/green]",
             "",
             "## Deployment Steps",
             "",
-            "### 1. Extract bundle",
-            f"```bash",
-            f"mkdir -p {target_dir}",
-            f"unzip {bundle_path} -d {target_dir}",
-            f"```",
-            "",
-            "### 2. Install Roxy",
-            "```bash",
-            f"cd {target_dir}",
-            f"unzip roxy-src.zip -d roxy",
-            f"cd roxy && pip install -e '.[tui]'",
+            "### 1. Choose a target directory",
+            "```text",
+            f"TARGET={safe_target}",
             "```",
             "",
-            "### 3. Configure",
-            "```bash",
-            "# Copy and edit the config template",
-            f"cp config.template.yaml ~/.roxy/config.yaml",
-            "# Set your API keys:",
+            "### 2. Extract the bundle",
+            "```text",
+            f"mkdir -p $TARGET",
+            f"unzip {safe_bundle} -d $TARGET",
+            "```",
+            "",
+            "### 3. Install Roxy from the bundle",
+            "```text",
+            "cd $TARGET",
+            "unzip roxy-src.zip -d roxy",
+            "cd roxy && pip install -e '.[tui]'",
+            "```",
+            "",
+            "### 4. Configure",
+            "```text",
+            "# Copy the config template",
+            "cp config.template.yaml ~/.roxy/config.yaml",
+            "",
+            "# Set your API keys (template has empty placeholders):",
             "#   roxy config set models.providers.<name>.api_key \"<key>\"",
-            "# Or use env vars: OPENAI_API_KEY, DEEPSEEK_API_KEY, etc.",
+            "# Or use environment variables:",
+            "#   export OPENAI_API_KEY=\"...\"",
+            "#   export DEEPSEEK_API_KEY=\"...\"",
             "```",
             "",
-            "### 4. Import knowledge",
-            "```bash",
+            "### 5. Import knowledge",
+            "```text",
             "roxy knowledge import kb.jsonl",
             "```",
             "",
-            "### 5. Restore eval seeds",
-            "```bash",
-            "cp eval_seeds.jsonl .",
-            "roxy eval validate eval_seeds.jsonl",
+            "### 6. Run a baseline eval to verify the environment",
+            "```text",
+            "roxy eval run eval_seeds.jsonl --out baseline.json",
             "```",
             "",
-            "### 6. Verify",
-            "```bash",
+            "### 7. Verify installation",
+            "```text",
             "roxy doctor",
             "roxy dev check",
             "```",
@@ -208,7 +245,7 @@ class Replicator:
             "",
             "## Security Notes",
             "- **No API keys are included in this bundle**",
-            "- Config template has empty key placeholders",
+            "- Config template has empty key placeholders only",
             "- Set keys via environment variables or `roxy config set`",
             "- Do not commit config.yaml with real keys to version control",
             "",
@@ -258,7 +295,6 @@ class Replicator:
         return seeds_path.read_bytes()
 
     def _export_config_template(self) -> bytes:
-        """Generate a sanitized config template — no real keys."""
         template = {
             "models": {
                 "default": "deepseek/deepseek-chat",
