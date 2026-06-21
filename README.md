@@ -25,8 +25,8 @@
 <p align="center">
   <a href="https://github.com/IBN-Spring/Roxy-Agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
-  <a href="#"><img src="https://img.shields.io/badge/version-1.0.0-green.svg" alt="Version 0.9.0"></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-308%20passed-brightgreen.svg" alt="294 Tests"></a>
+  <a href="#"><img src="https://img.shields.io/badge/version-1.0.0-green.svg" alt="Version 1.0.0"></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-308%20passed-brightgreen.svg" alt="308 Tests"></a>
 </p>
 
 
@@ -51,7 +51,7 @@ Roxy 是一个 **源码级自进化 Agent**。它能记录自己的运行轨迹�
 
 ```bash
 git clone https://github.com/IBN-Spring/Roxy-Agent.git
-cd Roxy
+cd Roxy-Agent
 pip install -e ".[tui]"
 
 roxy init --yes --name "你的名字"

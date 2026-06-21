@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import click
@@ -43,7 +44,7 @@ def dev_check(quick: bool) -> None:
     console.print(f"\n[bold]Roxy v{__version__} — Dev Check[/bold]\n")
 
     # Version
-    check("version matches", lambda: _assert(__version__ == "0.6.0", f"Expected 0.6.0, got {__version__}"))
+    check("version matches", lambda: _check_version_matches(__version__))
 
     # Imports
     check("core imports", lambda: _import_all(["roxy", "roxy.config", "roxy.engine", "roxy.tools", "roxy.knowledge", "roxy.research", "roxy.evolution"]))
@@ -108,6 +109,25 @@ def _import_all(names):
 
 
 def _run(cmd, cwd=None):
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=cwd)
+    r = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+        cwd=cwd,
+    )
     if r.returncode != 0:
         raise RuntimeError(r.stderr[:200] if r.stderr else f"exit {r.returncode}")
+
+
+def _check_version_matches(package_version: str) -> None:
+    root = Path(__file__).resolve().parent.parent.parent.parent
+    pyproject = root / "pyproject.toml"
+    with open(pyproject, "rb") as f:
+        project_version = tomllib.load(f)["project"]["version"]
+    _assert(
+        package_version == project_version,
+        f"pyproject.toml has {project_version}, roxy.__version__ has {package_version}",
+    )
