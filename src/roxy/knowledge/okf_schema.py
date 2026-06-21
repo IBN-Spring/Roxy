@@ -27,7 +27,7 @@ OKF_FOLLOWUP_PRIORITY = ("low", "medium", "high")
 
 OKF_JSON_SCHEMA: dict = {
     "$schema": "https://json-schema.org/draft/2020-12/schema#",
-    "$id": "https://github.com/IBN-Spring/Roxy/okf-v0.1.json",
+    "$id": "https://github.com/IBN-Spring/Roxy-Agent/okf-v0.1.json",
     "title": "Roxy Open Knowledge Format v0.1",
     "description": "Canonical interchange format for Roxy knowledge base entries.",
     "type": "object",

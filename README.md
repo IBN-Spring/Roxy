@@ -11,11 +11,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/IBN-Spring/Roxy">Roxy Agent</a>
+  <a href="https://github.com/IBN-Spring/Roxy-Agent">Roxy Agent</a>
   ·
   <a href="docs/FORMAL_VERSION_PLAN.md">Documentation</a>
   ·
-  <a href="https://github.com/IBN-Spring/Roxy/blob/main/LICENSE">License: MIT</a>
+  <a href="https://github.com/IBN-Spring/Roxy-Agent/blob/main/LICENSE">License: MIT</a>
   ·
   Built by <a href="https://github.com/IBN-Spring">IBN-Spring</a>
   ·
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/IBN-Spring/Roxy/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/IBN-Spring/Roxy-Agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="#"><img src="https://img.shields.io/badge/version-0.9.0-green.svg" alt="Version 0.9.0"></a>
   <a href="#"><img src="https://img.shields.io/badge/tests-294%20passed-brightgreen.svg" alt="294 Tests"></a>
@@ -52,7 +52,7 @@ Roxy 是一个 **源码级自进化 Agent**。它能记录自己的运行轨迹�
 ## 快速开始
 
 ```bash
-git clone https://github.com/IBN-Spring/Roxy.git
+git clone https://github.com/IBN-Spring/Roxy-Agent.git
 cd Roxy
 pip install -e ".[tui]"
 
