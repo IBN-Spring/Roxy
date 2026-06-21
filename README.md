@@ -4,7 +4,8 @@
 
 <h1 align="left">Roxy Agent</h1>
 
-<p align="left">
+
+<p align="center">
   <a href="https://github.com/IBN-Spring/Roxy">Roxy Agent</a>
   ·
   <a href="docs/FORMAL_VERSION_PLAN.md">Documentation</a>
