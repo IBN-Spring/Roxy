@@ -26,8 +26,8 @@
 <p align="center">
   <a href="https://github.com/IBN-Spring/Roxy/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
-  <a href="#"><img src="https://img.shields.io/badge/version-0.6.0-green.svg" alt="Version 0.6.0"></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-238%20passed-brightgreen.svg" alt="238 Tests"></a>
+  <a href="#"><img src="https://img.shields.io/badge/version-0.9.0-green.svg" alt="Version 0.9.0"></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-294%20passed-brightgreen.svg" alt="294 Tests"></a>
 </p>
 
 ---
@@ -103,11 +103,28 @@ roxy chat
 ### 受控自进化
 
 ```bash
+# 1. 记录轨迹（自动）→ 生成评估种子
 roxy eval seeds generate --out seeds.jsonl
+
+# 2. 基线评估 → 生成源码级进化提案
 roxy eval run seeds.jsonl --out baseline.json
-roxy eval propose baseline.json --out proposals.md
-roxy eval run seeds.jsonl --out candidate.json
-roxy eval compare baseline.json candidate.json
+roxy evolve observe --from-eval baseline.json
+roxy evolve propose --target tool-descriptions --from-eval baseline.json
+
+# 3. 沙箱化源码级 patch → 测试 → 审查 → 人工合并
+roxy evolve patch prepare <proposal-id>
+roxy evolve patch apply <proposal-id>
+roxy evolve test <proposal-id>
+roxy evolve review <proposal-id>
+roxy evolve merge <proposal-id> --confirm
+```
+
+### 可移植复制
+
+```bash
+roxy replicate export --out roxy-bundle.zip
+roxy replicate validate roxy-bundle.zip
+roxy deploy plan --from roxy-bundle.zip
 ```
 
 ## 架构
@@ -178,8 +195,10 @@ roxy research runs list/latest/show
 roxy monitor run [--json | --feeds-only | --topics-only]
 
 roxy traces list/show/export
-roxy eval seeds generate
-roxy eval run/report/propose/compare
+roxy eval seeds generate / run / report / propose / compare
+roxy evolve observe / propose / patch / test / review / merge
+roxy replicate export / validate
+roxy deploy plan
 
 roxy dev check [--quick]
 ```
@@ -227,7 +246,7 @@ python -m roxy dev check
 bash scripts/demo.sh
 ```
 
-当前测试规模：`279 passed`。
+当前测试规模：`294 passed`。
 
 ## 路线图
 
@@ -238,9 +257,9 @@ bash scripts/demo.sh
 | v0.4 | External Capability Layer：频道协议、学术频道、研究方向、统一监控 |
 | v0.5 | Controlled Evolution：trace、eval、proposal、compare |
 | v0.6 | Release Hardening：文档、dev check、版本一致性、发布清单 |
-| **v0.7** | **Source-Level Proposals：从 traces/eval/channel 生成源码级 RFC，evidence 真实可追溯** |
-| **v0.8** | **Sandboxed Source Evolution：隔离分支确定性 patch、白名单测试、审查报告、5 道 merge 安全门** |
-| v0.9 | Self-Deployment & Runtime Replication（计划中） |
+| **v0.7** | **源码级进化提案：从 traces/eval 生成 RFC，evidence 可追溯** |
+| **v0.8** | **沙箱化源码自进化：隔离分支 patch、白名单测试、5 道 merge 门** |
+| **v0.9** | **可移植复制：bundle 导出/校验，部署计划，不复制密钥** |
 
 详见 [docs/FORMAL_VERSION_PLAN.md](docs/FORMAL_VERSION_PLAN.md)。
 
